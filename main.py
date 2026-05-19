@@ -6,8 +6,12 @@ import io
 import pandas as pd
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+import os
 
-load_dotenv('backend/.env')
+load_dotenv('backend/.env', override=True)
+# Remove service-account key override so the Cloud SQL connector
+# uses Application Default Credentials (gcloud auth application-default login)
+os.environ.pop('GOOGLE_APPLICATION_CREDENTIALS', None)
 
 from backend.db import get_engine
 from backend import gcs
