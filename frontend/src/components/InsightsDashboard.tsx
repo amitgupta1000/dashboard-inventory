@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { colors, getStatusColor, getHealthColor, getHealthBgColor } from '../styles/colors';
 
 interface IntelligenceSummary {
   item: string;
@@ -112,24 +113,13 @@ const InsightsDashboard: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'CRITICAL': return 'bg-red-100 text-red-800 border-red-300';
-      case 'WARNING': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
-      case 'EXCESS': return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'NORMAL': return 'bg-green-100 text-green-800 border-green-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
-    }
+  const getStatusColorForBadge = (status: string) => {
+    const colorObj = getStatusColor(status);
+    return colorObj.badge;
   };
 
-  const getHealthColor = (health: string) => {
-    switch (health) {
-      case 'CRITICAL': return 'text-red-600';
-      case 'NEEDS_ATTENTION': return 'text-yellow-600';
-      case 'OVERSTOCKED': return 'text-blue-600';
-      case 'HEALTHY': return 'text-green-600';
-      default: return 'text-gray-600';
-    }
+  const getHealthColorClass = (health: string) => {
+    return getHealthColor(health);
   };
 
   if (loading) {
@@ -142,259 +132,272 @@ const InsightsDashboard: React.FC = () => {
 
   if (error) {
     return (
-      <div className="bg-white rounded-lg shadow p-8">
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start">
-            <div className="flex-shrink-0">
-              <span className="text-red-600 font-bold text-lg">⚠️</span>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 p-8 flex items-center justify-center">
+        <div className="max-w-2xl w-full">
+          <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-xl border border-slate-200 p-12">
+            <div className="mb-8 bg-gradient-to-br from-rose-50 to-rose-100/50 border border-rose-200 rounded-2xl p-6 shadow-md">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 text-4xl">⚠️</div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-rose-900 mb-2">Backend Connection Error</h3>
+                  <p className="text-rose-800 font-medium">
+                    {error}. Check if the API is running on http://localhost:8000
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Backend Connection Error</h3>
-              <p className="mt-1 text-sm text-red-700">
-                {error}. Check if the API is running on http://localhost:8000
+            
+            <div className="text-center">
+              <p className="text-2xl mb-3">📊</p>
+              <p className="text-xl font-bold text-slate-800 mb-2">No Intelligence Data Available</p>
+              <p className="text-slate-600 mb-8">
+                Ensure the backend is running and the database is connected
               </p>
+              <button
+                onClick={fetchData}
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold rounded-xl hover:shadow-lg transition-all duration-300 hover:scale-105"
+              >
+                🔄 Retry Connection
+              </button>
             </div>
           </div>
-        </div>
-        <div className="text-center">
-          <p className="text-lg text-gray-600 mb-4">📊 No intelligence data available</p>
-          <p className="text-sm text-gray-500 mb-6">
-            Ensure the backend is running and the database is connected
-          </p>
-          <button
-            onClick={fetchData}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-          >
-            🔄 Retry Connection
-          </button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Executive Summary Card */}
-      {narrative && (
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-2xl font-semibold text-gray-800">
-              📊 Executive Summary
-            </h2>
-            <span className={`text-xl font-bold ${getHealthColor(narrative.overall_health)}`}>
-              {narrative.overall_health}
-            </span>
-          </div>
-          
-          <p className="text-gray-700 text-lg mb-4 leading-relaxed">
-            {narrative.executive_summary}
-          </p>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <div className="bg-red-50 p-3 rounded border border-red-200">
-              <div className="text-sm text-red-600 font-medium">Critical</div>
-              <div className="text-2xl font-bold text-red-700">{narrative.critical_count}</div>
-            </div>
-            <div className="bg-yellow-50 p-3 rounded border border-yellow-200">
-              <div className="text-sm text-yellow-600 font-medium">Warning</div>
-              <div className="text-2xl font-bold text-yellow-700">{narrative.warning_count}</div>
-            </div>
-            <div className="bg-blue-50 p-3 rounded border border-blue-200">
-              <div className="text-sm text-blue-600 font-medium">Excess</div>
-              <div className="text-2xl font-bold text-blue-700">{narrative.excess_count}</div>
-            </div>
-            <div className="bg-green-50 p-3 rounded border border-green-200">
-              <div className="text-sm text-green-600 font-medium">Normal</div>
-              <div className="text-2xl font-bold text-green-700">{narrative.normal_count}</div>
-            </div>
-          </div>
-
-          {narrative.recommended_actions && narrative.recommended_actions.length > 0 && (
-            <div className="bg-yellow-50 border border-yellow-300 rounded p-4">
-              <h3 className="text-lg font-semibold text-yellow-800 mb-2">🎯 Recommended Actions:</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {narrative.recommended_actions.map((action, idx) => (
-                  <li key={idx} className="text-yellow-900">{action}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Critical Alerts */}
-      {alerts.length > 0 && (
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-            🚨 Critical Alerts
-          </h2>
-          <div className="space-y-2">
-            {alerts.slice(0, 10).map((alert, idx) => (
-              <div
-                key={idx}
-                className={`p-3 rounded border-l-4 ${
-                  alert.priority === 1 ? 'bg-red-50 border-red-500' :
-                  alert.priority === 2 ? 'bg-orange-50 border-orange-500' :
-                  alert.priority === 3 ? 'bg-yellow-50 border-yellow-500' :
-                  'bg-blue-50 border-blue-500'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-800">
-                      {alert.alert_type}
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      {alert.item} @ {alert.company} - {alert.port}
-                    </div>
-                    <div className="text-sm text-gray-700 mt-1">
-                      {alert.alert_message}
-                    </div>
-                  </div>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 p-6 md:p-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 max-w-7xl mx-auto">
+        {/* Main Central Panel */}
+        <div className="lg:col-span-2 space-y-6 md:space-y-8">
+          {/* Executive Summary Card */}
+          {narrative && (
+            <div className={`${colors.cards.primary} rounded-2xl ${colors.shadows.lg} border border-slate-200 p-8 md:p-10 transition-all duration-300 hover:shadow-xl`}>
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
+                <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                  📊 Executive Summary
+                </h2>
+                <div className={`px-6 py-3 rounded-full font-bold text-sm tracking-wider uppercase whitespace-nowrap shadow-md border ${getHealthBgColor(narrative.overall_health)} ${getHealthColorClass(narrative.overall_health)}`}>
+                  {narrative.overall_health}
                 </div>
               </div>
-            ))}
+              
+              <p className="text-slate-700 text-lg mb-10 leading-relaxed font-medium">
+                {narrative.executive_summary}
+              </p>
+
+              {/* Status Cards Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                {[
+                  { label: 'Critical', count: narrative.critical_count, statusKey: 'critical' },
+                  { label: 'Warning', count: narrative.warning_count, statusKey: 'warning' },
+                  { label: 'Excess', count: narrative.excess_count, statusKey: 'excess' },
+                  { label: 'Normal', count: narrative.normal_count, statusKey: 'normal' },
+                ].map(({ label, count, statusKey }: any) => {
+                  const statusColor = colors.status[statusKey as keyof typeof colors.status];
+                  return (
+                    <div
+                      key={statusKey}
+                      className={`bg-gradient-to-br ${statusColor.bg} rounded-2xl border ${statusColor.border} ${colors.shadows.md} p-6 flex flex-col items-center justify-center text-center hover:shadow-lg transition-all duration-300 hover:scale-105`}
+                    >
+                      <div className={`text-sm font-bold tracking-wider uppercase flex items-center gap-2 ${statusColor.text}`}>
+                        <span className="text-2xl">{statusColor.icon}</span>
+                        {label}
+                      </div>
+                      <div className={`text-5xl font-extrabold mt-3 ${statusColor.text}`}>{count}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Recommended Actions */}
+              {narrative.recommended_actions && narrative.recommended_actions.length > 0 && (
+                <div className="bg-gradient-to-br from-amber-50 to-yellow-50/30 border border-amber-200 rounded-2xl p-6 mt-8 shadow-md">
+                  <h3 className="text-sm font-bold text-amber-900 mb-4 uppercase tracking-wider flex items-center gap-2">
+                    <span className="text-xl">🎯</span> Recommended Actions
+                  </h3>
+                  <ul className="space-y-3">
+                    {narrative.recommended_actions.map((action, idx) => (
+                      <li key={idx} className="text-amber-900 font-medium flex items-start gap-3">
+                        <span className="text-amber-500 font-bold mt-1">•</span>
+                        {action}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Product Intelligence Table */}
+          <div className={`${colors.cards.primary} rounded-2xl ${colors.shadows.lg} border border-slate-200 p-8 md:p-10 overflow-hidden transition-all duration-300 hover:shadow-xl`}>
+            <h2 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-8">
+              📈 Product Intelligence
+            </h2>
+            <div className="overflow-x-auto rounded-xl">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-200">
+                  <tr>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider rounded-tl-lg">Product</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider text-right">Stock</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider text-right">Coverage</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider text-right">Gap</th>
+                    <th className="px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider text-right">Margin %</th>
+                    <th className="px-6 py-4 text-center text-xs font-bold text-slate-600 uppercase tracking-wider rounded-tr-lg">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {summary.map((item) => (
+                    <tr
+                      key={item.item}
+                      className="hover:bg-gradient-to-r hover:from-slate-50 hover:to-blue-50/30 transition-all duration-200 hover:shadow-sm"
+                    >
+                      <td className="px-6 py-5 text-sm font-semibold text-slate-800">
+                        {item.item}
+                      </td>
+                      <td className="px-6 py-5 text-sm">
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold border inline-block ${getStatusColorForBadge(item.stock_status)}`}>
+                          {item.stock_status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-right text-slate-700 font-semibold">
+                        {item.total_stock_all_locations?.toLocaleString('en-US', { maximumFractionDigits: 0 }) || '-'}
+                      </td>
+                      <td className="px-6 py-5 text-sm text-right font-bold">
+                        <span className={
+                          item.days_of_stock_remaining < 10 ? 'text-rose-600' :
+                          item.days_of_stock_remaining < 20 ? 'text-amber-600' :
+                          'text-emerald-600'
+                        }>
+                          {item.days_of_stock_remaining?.toFixed(1) || '-'} d
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-right font-bold">
+                        {item.shortage_qty > 0 ? (
+                          <span className="text-rose-600 bg-rose-50 px-3 py-1.5 rounded-lg inline-block border border-rose-200">
+                            -{item.shortage_qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </span>
+                        ) : item.excess_qty > 0 ? (
+                          <span className="text-sky-600 bg-sky-50 px-3 py-1.5 rounded-lg inline-block border border-sky-200">
+                            +{item.excess_qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-5 text-sm text-right font-bold">
+                        <span className={
+                          item.profit_margin_percent > 20 ? 'text-emerald-600' :
+                          item.profit_margin_percent > 10 ? 'text-emerald-500' :
+                          item.profit_margin_percent > 0 ? 'text-slate-700' :
+                          'text-rose-600'
+                        }>
+                          {item.profit_margin_percent?.toFixed(2) || '-'}%
+                        </span>
+                      </td>
+                      <td className="px-6 py-5 text-sm text-center">
+                        <button
+                          onClick={() => fetchProductNarrative(item.item)}
+                          className="px-4 py-2 bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 font-bold rounded-lg hover:from-indigo-100 hover:to-blue-100 transition-all duration-300 text-xs shadow-sm border border-indigo-200 hover:shadow-md hover:scale-105"
+                        >
+                          Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Product Intelligence Summary Table */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-          📈 Product Intelligence Summary
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-blue-500">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-white">Product</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-white">Status</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-white">Current Stock</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-white">Days Coverage</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-white">Safety Stock</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-white">Reorder Point</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-white">Shortage/Excess</th>
-                <th className="px-4 py-3 text-right text-sm font-semibold text-white">Margin %</th>
-                <th className="px-4 py-3 text-center text-sm font-semibold text-white">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.map((item, index) => (
-                <tr
-                  key={item.item}
-                  className={`${
-                    index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                  } hover:bg-blue-50 transition-colors`}
-                >
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900 border-b">
-                    {item.item}
-                  </td>
-                  <td className="px-4 py-3 text-sm border-b">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold border ${getStatusColor(item.stock_status)}`}>
-                      {item.stock_status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-700 border-b">
-                    {item.total_stock_all_locations?.toLocaleString('en-US', { maximumFractionDigits: 2 }) || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-700 border-b">
-                    <span className={
-                      item.days_of_stock_remaining < 10 ? 'text-red-600 font-bold' :
-                      item.days_of_stock_remaining < 20 ? 'text-yellow-600 font-semibold' :
-                      'text-gray-700'
-                    }>
-                      {item.days_of_stock_remaining?.toFixed(1) || '-'} days
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-600 border-b">
-                    {item.safety_stock?.toLocaleString('en-US', { maximumFractionDigits: 0 }) || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right text-gray-600 border-b">
-                    {item.reorder_point?.toLocaleString('en-US', { maximumFractionDigits: 0 }) || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right border-b">
-                    {item.shortage_qty > 0 ? (
-                      <span className="text-red-600 font-semibold">
-                        -{item.shortage_qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                      </span>
-                    ) : item.excess_qty > 0 ? (
-                      <span className="text-blue-600 font-semibold">
-                        +{item.excess_qty.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                      </span>
-                    ) : (
-                      <span className="text-gray-500">-</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right border-b">
-                    <span className={
-                      item.profit_margin_percent > 20 ? 'text-green-600 font-semibold' :
-                      item.profit_margin_percent > 10 ? 'text-green-600' :
-                      item.profit_margin_percent > 0 ? 'text-gray-700' :
-                      'text-red-600 font-semibold'
-                    }>
-                      {item.profit_margin_percent?.toFixed(2) || '-'}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-center border-b">
-                    <button
-                      onClick={() => fetchProductNarrative(item.item)}
-                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+        {/* Sidebar - Critical Alerts */}
+        <div className="lg:col-span-1">
+          {alerts.length > 0 && (
+            <div className={`${colors.cards.primary} rounded-2xl ${colors.shadows.lg} border border-slate-200 p-6 md:p-8 lg:sticky lg:top-6 transition-all duration-300 hover:shadow-xl h-fit`}>
+              <h2 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent mb-6">
+                🚨 Active Alerts
+              </h2>
+              <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
+                {alerts.slice(0, 10).map((alert, idx) => {
+                  const statusColor = getStatusColor(alert.priority === 1 ? 'CRITICAL' : alert.priority === 2 ? 'WARNING' : alert.priority === 3 ? 'EXCESS' : 'NORMAL');
+                  return (
+                    <div
+                      key={idx}
+                      className={`bg-gradient-to-br ${statusColor.bg} rounded-xl border ${statusColor.border} ${colors.shadows.md} p-4 transition-all duration-300 hover:shadow-lg hover:scale-105 hover:-translate-y-1 cursor-pointer`}
                     >
-                      Details
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      <div className="flex flex-col gap-3">
+                        <div className={`font-bold text-sm ${statusColor.text} uppercase tracking-wide`}>
+                          {statusColor.icon} {alert.alert_type}
+                        </div>
+                        <div className="text-xs font-semibold text-slate-600">
+                          {alert.item} • {alert.company} • {alert.port}
+                        </div>
+                        <div className="text-sm text-slate-700 bg-white/80 backdrop-blur-sm p-3 rounded-lg border border-white/50 mt-1">
+                          {alert.alert_message}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Product Narrative Modal */}
       {selectedProduct && productNarrative && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6">
-            <div className="flex justify-between items-start mb-4">
-              <h3 className="text-xl font-semibold text-gray-800">
-                Product Analysis: {selectedProduct}
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-300">
+          <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-2xl max-w-3xl w-full p-10 border border-slate-200 animate-in scale-95 duration-300 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-8">
+              <h3 className="text-3xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                {selectedProduct} Analysis
               </h3>
               <button
                 onClick={() => {
                   setSelectedProduct(null);
                   setProductNarrative(null);
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-full w-10 h-10 flex items-center justify-center transition-all duration-300 hover:scale-110 font-bold text-lg"
               >
                 ✕
               </button>
             </div>
             
-            <div className={`p-4 rounded mb-4 ${getStatusColor(productNarrative.status)}`}>
-              <div className="font-semibold text-lg mb-2">Status: {productNarrative.status}</div>
+            <div className={`px-6 py-4 rounded-xl mb-8 inline-flex border ${colors.shadows.md} font-bold text-sm uppercase tracking-wider ${getStatusColorForBadge(productNarrative.status)}`}>
+              STATUS: {productNarrative.status}
             </div>
 
-            <p className="text-gray-700 leading-relaxed mb-4">
+            <p className="text-slate-700 text-lg leading-relaxed mb-10 font-medium">
               {productNarrative.narrative}
             </p>
 
             {productNarrative.actions && productNarrative.actions.length > 0 && (
-              <div className="bg-yellow-50 border border-yellow-300 rounded p-4">
-                <h4 className="font-semibold text-yellow-800 mb-2">Recommended Actions:</h4>
-                <ul className="list-disc list-inside space-y-1">
+              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border border-indigo-200 rounded-2xl p-8 mb-8 shadow-md">
+                <h4 className="font-bold text-indigo-900 mb-4 uppercase text-sm tracking-wider flex items-center gap-2">
+                  <span className="text-xl">💡</span> Recommended Actions
+                </h4>
+                <ul className="space-y-3">
                   {productNarrative.actions.map((action: string, idx: number) => (
-                    <li key={idx} className="text-yellow-900">{action}</li>
+                    <li key={idx} className="text-indigo-900 font-medium flex items-start gap-3">
+                      <span className="text-indigo-500 font-bold mt-1">→</span>
+                      {action}
+                    </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            <div className="mt-4 flex justify-end">
+            <div className="mt-10 flex justify-end gap-4">
               <button
                 onClick={() => {
                   setSelectedProduct(null);
                   setProductNarrative(null);
                 }}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                className="px-8 py-3 bg-gradient-to-r from-slate-100 to-slate-50 text-slate-700 font-bold rounded-xl hover:from-slate-200 hover:to-slate-100 transition-all duration-300 border border-slate-200 hover:shadow-lg hover:scale-105"
               >
                 Close
               </button>

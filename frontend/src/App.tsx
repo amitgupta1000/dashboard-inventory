@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import './styles/animations.css';
 import DataTable from './components/DataTable';
 import ProductSettings from './components/ProductSettings';
 import InsightsDashboard from './components/InsightsDashboard';
@@ -70,137 +71,119 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-4xl font-semibold text-gray-800 border-b-2 border-blue-500 pb-3">
-            Sumairo Inventory Management Dashboard
-          </h1>
+        {/* Header */}
+        <div className="bg-gradient-to-r from-slate-50 to-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+          <div className="px-6 md:px-10 py-8">
+            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-slate-800 via-blue-700 to-indigo-600 bg-clip-text text-transparent">
+              📊 Sumairo Inventory Dashboard
+            </h1>
+            <p className="text-slate-600 mt-2 font-medium">Real-time inventory intelligence and management</p>
+          </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="mb-6">
-          <div className="border-b border-gray-300">
-            <nav className="-mb-px flex space-x-8">
-              <button
-                onClick={() => setActiveTab('insights')}
-                className={`${
-                  activeTab === 'insights'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
-              >
-                🧠 Intelligence & Insights
-              </button>
-              <button
-                onClick={() => setActiveTab('inventory')}
-                className={`${
-                  activeTab === 'inventory'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
-              >
-                📊 Sumairo Inventory Dashboard
-              </button>
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={`${
-                  activeTab === 'settings'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
-              >
-                ⚙️ Product Settings
-              </button>
+        <div className="sticky top-[105px] z-30 bg-white border-b border-slate-200 shadow-sm">
+          <div className="px-6 md:px-10">
+            <nav className="flex space-x-1">
+              {[
+                { id: 'insights' as const, label: '🧠 Intelligence & Insights' },
+                { id: 'inventory' as const, label: '📊 Inventory Data' },
+                { id: 'settings' as const, label: '⚙️ Product Settings' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-6 py-4 font-semibold text-sm transition-all duration-300 border-b-2 whitespace-nowrap ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600 bg-gradient-to-b from-blue-50/50 to-transparent'
+                      : 'border-transparent text-slate-600 hover:text-slate-800 hover:border-slate-300'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </nav>
           </div>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === 'insights' && <InsightsDashboard />}
+        {/* Content Area */}
+        <div className="px-6 md:px-10 py-8 md:py-12">
+          {activeTab === 'insights' && <InsightsDashboard />}
 
-        {activeTab === 'inventory' && (
-          <>
-            {loading ? (
-              <div className="flex items-center justify-center p-8">
-                <div className="text-xl text-gray-600">Loading inventory data...</div>
-              </div>
-            ) : error ? (
-              <div className="bg-white rounded-lg shadow p-8">
-                <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0">
-                      <span className="text-red-600 font-bold text-lg">⚠️</span>
+          {activeTab === 'inventory' && (
+            <>
+              {loading ? (
+                <div className="flex items-center justify-center p-16">
+                  <div className="text-center">
+                    <div className="inline-block mb-4">
+                      <div className="animate-spin">
+                        <span className="text-5xl">⏳</span>
+                      </div>
                     </div>
-                    <div className="ml-3">
-                      <h3 className="text-sm font-medium text-red-800">Backend Connection Error</h3>
-                      <p className="mt-1 text-sm text-red-700">
-                        {error}. Check if the API is running on http://localhost:8000
-                      </p>
-                    </div>
+                    <p className="text-xl text-slate-600 font-semibold">Loading inventory data...</p>
+                    <p className="text-slate-500 mt-2">Please wait while we fetch your data</p>
                   </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-lg text-gray-600 mb-4">📦 No inventory data available</p>
-                  <button
-                    onClick={fetchData}
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                  >
-                    🔄 Retry Connection
-                  </button>
-                </div>
-              </div>
-            ) : inventory.length === 0 ? (
-              <div className="bg-white rounded-lg shadow p-8">
-                <div className="text-center">
-                  <p className="text-lg text-gray-600 mb-2">📊 No inventory records yet</p>
-                  <p className="text-sm text-gray-500">
-                    Upload a stock_report.xlsx file to populate inventory data
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <>
-                {summary && (
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-sm text-gray-600">Total Products</div>
-                      <div className="text-2xl font-bold text-gray-800">{summary.total_products}</div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-sm text-gray-600">Physical Stock</div>
-                      <div className="text-2xl font-bold text-gray-800">
-                        {summary.total_physical_stock.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-sm text-gray-600">Total Sold Qty</div>
-                      <div className="text-2xl font-bold text-gray-800">
-                        {summary.total_sold_qty.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-sm text-gray-600">Total Unsold Qty</div>
-                      <div className="text-2xl font-bold text-gray-800">
-                        {summary.total_unsold_qty.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-sm text-gray-600">Stock Value</div>
-                      <div className="text-2xl font-bold text-green-600">
-                        ₹{summary.total_stock_value.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+              ) : error ? (
+                <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-12 max-w-2xl mx-auto">
+                  <div className="mb-8 bg-gradient-to-br from-rose-50 to-rose-100/50 border border-rose-200 rounded-2xl p-6">
+                    <div className="flex items-start gap-4">
+                      <div className="text-4xl">⚠️</div>
+                      <div>
+                        <h3 className="text-lg font-bold text-rose-900">Backend Connection Error</h3>
+                        <p className="text-rose-800 mt-1 font-medium">{error}</p>
+                        <p className="text-rose-700 text-sm mt-2">Check if the API is running on http://localhost:8000</p>
                       </div>
                     </div>
                   </div>
-                )}
+                  <div className="text-center">
+                    <button
+                      onClick={fetchData}
+                      className="px-8 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-xl hover:shadow-lg transition-all duration-300 hover:scale-105"
+                    >
+                      🔄 Retry Connection
+                    </button>
+                  </div>
+                </div>
+              ) : inventory.length === 0 ? (
+                <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 p-16 text-center max-w-2xl mx-auto">
+                  <p className="text-3xl mb-4">📦</p>
+                  <p className="text-2xl font-bold text-slate-800 mb-2">No inventory records yet</p>
+                  <p className="text-slate-600 font-medium">Upload a stock_report.xlsx file to populate inventory data</p>
+                </div>
+              ) : (
+                <>
+                  {summary && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 mb-10">
+                      {[
+                        { label: 'Total Products', value: summary.total_products.toString(), icon: '📦', color: 'from-blue-50 to-blue-100/50', textColor: 'text-blue-700', borderColor: 'border-blue-200' },
+                        { label: 'Physical Stock', value: summary.total_physical_stock.toLocaleString('en-US', { maximumFractionDigits: 0 }), icon: '📊', color: 'from-purple-50 to-purple-100/50', textColor: 'text-purple-700', borderColor: 'border-purple-200' },
+                        { label: 'Total Sold', value: summary.total_sold_qty.toLocaleString('en-US', { maximumFractionDigits: 0 }), icon: '📈', color: 'from-green-50 to-green-100/50', textColor: 'text-green-700', borderColor: 'border-green-200' },
+                        { label: 'Unsold Qty', value: summary.total_unsold_qty.toLocaleString('en-US', { maximumFractionDigits: 0 }), icon: '📉', color: 'from-amber-50 to-amber-100/50', textColor: 'text-amber-700', borderColor: 'border-amber-200' },
+                        { label: 'Stock Value', value: '₹' + summary.total_stock_value.toLocaleString('en-US', { maximumFractionDigits: 0 }), icon: '💰', color: 'from-emerald-50 to-emerald-100/50', textColor: 'text-emerald-700', borderColor: 'border-emerald-200' },
+                      ].map((card, idx) => (
+                        <div
+                          key={idx}
+                          className={`bg-gradient-to-br ${card.color} rounded-2xl border ${card.borderColor} shadow-md p-6 transition-all duration-300 hover:shadow-lg hover:scale-105 hover:-translate-y-1`}
+                        >
+                          <div className="text-3xl mb-2">{card.icon}</div>
+                          <p className={`text-xs font-bold uppercase tracking-wider ${card.textColor}`}>{card.label}</p>
+                          <p className={`text-2xl md:text-3xl font-extrabold mt-3 ${card.textColor}`}>{card.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                <DataTable data={inventory} />
-              </>
-            )}
-          </>
-        )}
+                  <DataTable data={inventory} />
+                </>
+              )}
+            </>
+          )}
 
-        {activeTab === 'settings' && <ProductSettings />}
+          {activeTab === 'settings' && <ProductSettings />}
+        </div>
       </div>
     </div>
   );

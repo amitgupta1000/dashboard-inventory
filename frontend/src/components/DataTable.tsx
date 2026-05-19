@@ -142,24 +142,26 @@ const DataTable: React.FC<DataTableProps> = ({ data }) => {
   );
 
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-      <div className="overflow-x-auto">
-        <table {...getTableProps()} className="w-full">
-          <thead className="bg-blue-500">
+    <div className="bg-gradient-to-br from-white to-slate-50 rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+      <div className="overflow-x-auto rounded-t-2xl">
+        <table {...getTableProps()} className="w-full text-left">
+          <thead className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-200">
             {headerGroups.map((headerGroup) => (
               <tr {...headerGroup.getHeaderGroupProps()}>
-                {headerGroup.headers.map((column) => (
+                {headerGroup.headers.map((column, idx) => (
                   <th
                     {...column.getHeaderProps((column as any).getSortByToggleProps())}
-                    className="px-4 py-4 text-left text-sm font-semibold text-white cursor-pointer hover:bg-blue-600"
+                    className={`px-6 py-4 text-xs font-bold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-200 transition-colors ${
+                      idx === 0 ? 'rounded-tl-lg' : ''
+                    }`}
                   >
                     <div className="flex items-center gap-2">
                       {column.render('Header')}
-                      <span className="text-xs">
+                      <span className="text-sm">
                         {(column as any).isSorted
                           ? (column as any).isSortedDesc
-                            ? ' 🔽'
-                            : ' 🔼'
+                            ? '📉'
+                            : '📈'
                           : ''}
                       </span>
                     </div>
@@ -168,20 +170,18 @@ const DataTable: React.FC<DataTableProps> = ({ data }) => {
               </tr>
             ))}
           </thead>
-          <tbody {...getTableBodyProps()}>
+          <tbody {...getTableBodyProps()} className="divide-y divide-slate-100">
             {page.map((row, i) => {
               prepareRow(row);
               return (
                 <tr
                   {...row.getRowProps()}
-                  className={`${
-                    i % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                  } hover:bg-blue-50 transition-colors`}
+                  className="hover:bg-gradient-to-r hover:from-slate-50 hover:to-blue-50/30 transition-all duration-200"
                 >
                   {row.cells.map((cell) => (
                     <td
                       {...cell.getCellProps()}
-                      className="px-4 py-4 text-sm text-gray-700 border-b border-gray-200"
+                      className="px-6 py-4 text-sm text-slate-700 font-medium"
                     >
                       {cell.render('Cell')}
                     </td>
@@ -194,16 +194,16 @@ const DataTable: React.FC<DataTableProps> = ({ data }) => {
       </div>
 
       {/* Pagination Controls */}
-      <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-700">
-            Page{' '}
-            <strong>
+      <div className="bg-gradient-to-r from-slate-50 to-blue-50/30 px-6 py-5 flex flex-col md:flex-row items-center justify-between gap-4 border-t border-slate-200">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700">Page</span>
+            <strong className="text-slate-800">
               {pageIndex + 1} of {pageOptions.length}
             </strong>
-          </span>
-          <span className="text-sm text-gray-700">
-            | Go to page:{' '}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700">Go to:</span>
             <input
               type="number"
               defaultValue={pageIndex + 1}
@@ -211,15 +211,15 @@ const DataTable: React.FC<DataTableProps> = ({ data }) => {
                 const page = e.target.value ? Number(e.target.value) - 1 : 0;
                 gotoPage(page);
               }}
-              className="w-16 px-2 py-1 border border-gray-300 rounded"
+              className="w-16 px-3 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium"
             />
-          </span>
+          </div>
           <select
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
             }}
-            className="px-2 py-1 border border-gray-300 rounded text-sm"
+            className="px-3 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
           >
             {[10, 20, 30, 50].map((pageSize) => (
               <option key={pageSize} value={pageSize}>
@@ -232,30 +232,34 @@ const DataTable: React.FC<DataTableProps> = ({ data }) => {
           <button
             onClick={() => gotoPage(0)}
             disabled={!canPreviousPage}
-            className="px-3 py-1 bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600"
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-lg disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed hover:shadow-lg transition-all text-sm"
+            title="First page"
           >
-            {'<<'}
+            ⬅️ First
           </button>
           <button
             onClick={() => previousPage()}
             disabled={!canPreviousPage}
-            className="px-3 py-1 bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600"
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-lg disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed hover:shadow-lg transition-all text-sm"
+            title="Previous page"
           >
-            {'<'}
+            ◀ Prev
           </button>
           <button
             onClick={() => nextPage()}
             disabled={!canNextPage}
-            className="px-3 py-1 bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600"
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-lg disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed hover:shadow-lg transition-all text-sm"
+            title="Next page"
           >
-            {'>'}
+            Next ▶
           </button>
           <button
             onClick={() => gotoPage(pageCount - 1)}
             disabled={!canNextPage}
-            className="px-3 py-1 bg-blue-500 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-600"
+            className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold rounded-lg disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed hover:shadow-lg transition-all text-sm"
+            title="Last page"
           >
-            {'>>'}
+            Last ➡️
           </button>
         </div>
       </div>
