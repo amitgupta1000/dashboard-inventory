@@ -1,3 +1,18 @@
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from backend/ directory FIRST - before any other imports
+env_path = Path(__file__).parent / 'backend' / '.env'
+load_dotenv(env_path, override=True)
+
+# Now set USE_SQLITE to true for local development
+os.environ.setdefault('USE_SQLITE', 'true')
+
+# Remove service-account key override for local development
+os.environ.pop('GOOGLE_APPLICATION_CREDENTIALS', None)
+
+# Now we can safely import
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -5,19 +20,8 @@ import sqlalchemy
 import io
 import pandas as pd
 from typing import List, Dict, Any
-from dotenv import load_dotenv
-import os
-from pathlib import Path
 
-# Load .env from backend/ directory (robust to any cwd)
-env_path = Path(__file__).parent / 'backend' / '.env'
-load_dotenv(env_path, override=True)
-
-# Remove service-account key override so the Cloud SQL connector
-# uses Application Default Credentials (gcloud auth application-default login)
-os.environ.pop('GOOGLE_APPLICATION_CREDENTIALS', None)
-
-from backend.db import get_engine
+from backend.database import get_engine
 from backend import gcs
 
 app = FastAPI(title="Inventory Management API")
@@ -380,75 +384,16 @@ async def delete_product_setting(item_id: int):
     return {'success': True, 'message': 'Product setting deleted'}
 
 
-# =========================================================================
-# Intelligence & Analytics Endpoints
-# =========================================================================
-
-@app.get('/api/intelligence/summary')
-async def get_intelligence_summary():
-    """Get product-wise intelligence summary with threshold analysis"""
+@app.get('/api/intelligence/insights')
+async def get_intelligence_insights():
+    """Get intelligence insights for the dashboard"""
     engine = get_db_engine()
-    query = sqlalchemy.text("""
+    query = sqlalchemy.text("""        
         SELECT
-            item, total_stock_all_locations, total_unsold_all_locations,
-            total_incoming_all_locations, overall_avg_market_price,
-            overall_avg_selling_price, overall_avg_purchase_price,
-            safety_stock, reorder_point, max_storage_days,
-            max_inventory_days, monthly_target_volume,
-            days_of_stock_remaining, stock_status,
-            shortage_qty, excess_qty, profit_margin_percent,
-            target_fulfillment_percent, company_count, port_count
-        FROM v_product_intelligence_summary
-        ORDER BY 
-            CASE stock_status
-                WHEN 'CRITICAL' THEN 1
-                WHEN 'WARNING' THEN 2
-                WHEN 'EXCESS' THEN 3
-                ELSE 4
-            END,
-            item
+            id, item_name, insight_type, insight_message, severity, created_at
+        FROM insights
+        ORDER BY created_at DESC                    
     """)
-    
-    with engine.connect() as conn:
-        rows = conn.execute(query).mappings().all()
-
-    data = [
-        {k: (str(v) if hasattr(v, 'isoformat') else v) for k, v in row.items()}
-        for row in rows
-    ]
-    
-    return {
-        'success': True,
-        'data': data,
-        'total': len(data)
-    }
-
-
-@app.get('/api/intelligence/shipments')
-async def get_shipment_intelligence():
-    """Get shipment-level intelligence with aging analysis"""
-    engine = get_db_engine()
-    query = sqlalchemy.text("""
-        SELECT
-            id, record_date, item, port, company,
-            physical_stock, ready_unsold, incoming_qty, arrival_date,
-            purchase_price, selling_price, market_price,
-            system_status, safety_stock, reorder_point,
-            max_storage_days, max_inventory_days, monthly_target_volume,
-            days_in_stock, aging_status, days_to_deplete,
-            price_variance_percent, recommended_action, risk_flags
-        FROM v_shipment_intelligence
-        ORDER BY 
-            CASE recommended_action
-                WHEN 'URGENT_REORDER' THEN 1
-                WHEN 'LIQUIDATE_AGED_STOCK' THEN 2
-                WHEN 'REORDER_RECOMMENDED' THEN 3
-                WHEN 'REDUCE_PROCUREMENT' THEN 4
-                ELSE 5
-            END,
-            record_date
-    """)
-    
     with engine.connect() as conn:
         rows = conn.execute(query).mappings().all()
 
@@ -464,101 +409,60 @@ async def get_shipment_intelligence():
     }
 
 
-@app.get('/api/intelligence/alerts')
-async def get_critical_alerts():
-    """Get prioritized critical alerts"""
-    engine = get_db_engine()
-    query = sqlalchemy.text("""
-        SELECT
-            priority, alert_type, item, company, port,
-            physical_stock, safety_stock, reorder_point,
-            days_old, max_storage_days, alert_message
-        FROM v_critical_alerts
-        ORDER BY priority, item
-    """)
-    
-    with engine.connect() as conn:
-        rows = conn.execute(query).mappings().all()
 
-    data = [
-        {k: (str(v) if hasattr(v, 'isoformat') else v) for k, v in row.items()}
-        for row in rows
+
+@app.get('/api/intelligence/alerts')
+async def get_intelligence_alerts():
+    """Get intelligence alerts for the dashboard"""
+    # Mock alerts data - in production, this would come from AI analysis
+    alerts = [
+        {
+            'id': 1,
+            'item_name': 'Commodity A',
+            'alert_type': 'critical',
+            'alert_message': 'Stock level below safety threshold',
+            'severity': 'high',
+            'timestamp': '2026-05-20T10:30:00Z'
+        },
+        {
+            'id': 2,
+            'item_name': 'Commodity B',
+            'alert_type': 'warning',
+            'alert_message': 'Aging inventory detected',
+            'severity': 'medium',
+            'timestamp': '2026-05-20T09:15:00Z'
+        }
     ]
     
     return {
         'success': True,
-        'data': data,
-        'total': len(data)
+        'data': alerts
     }
 
 
 @app.get('/api/intelligence/narrative')
-async def get_inventory_narrative():
-    """Get natural language summary of inventory status"""
-    engine = get_db_engine()
-    query = sqlalchemy.text("""
-        SELECT
-            overall_health, executive_summary,
-            total_products, critical_count, warning_count,
-            excess_count, normal_count, avg_days_stock,
-            total_shortage, total_excess, avg_profit_margin,
-            aged_count, aging_soon_count, recommended_actions
-        FROM v_inventory_narrative
-    """)
-    
-    with engine.connect() as conn:
-        row = conn.execute(query).mappings().first()
-
-    if not row:
-        return {
-            'success': True,
-            'data': {
-                'overall_health': 'UNKNOWN',
-                'executive_summary': 'No inventory data available',
-                'recommended_actions': []
-            }
-        }
-
-    data = {}
-    for k, v in row.items():
-        if hasattr(v, 'isoformat'):
-            data[k] = str(v)
-        elif isinstance(v, (list, tuple)):
-            data[k] = list(v)
-        else:
-            data[k] = v
-    
-    return {
-        'success': True,
-        'data': data
-    }
-
-
-@app.get('/api/intelligence/product/{product_name}')
-async def get_product_narrative(product_name: str):
-    """Get natural language narrative for a specific product"""
-    engine = get_db_engine()
-    query = sqlalchemy.text("""
-        SELECT narrative, status, actions
-        FROM get_product_narrative(:product_name)
-    """)
-    
-    with engine.connect() as conn:
-        row = conn.execute(query, {'product_name': product_name}).mappings().first()
-
-    if not row:
-        raise HTTPException(status_code=404, detail='Product not found')
-
-    data = {
-        'narrative': row['narrative'],
-        'status': row['status'],
-        'actions': list(row['actions']) if row['actions'] else []
+async def get_intelligence_narrative():
+    """Get AI-generated narrative and insights"""
+    # Mock narrative data - in production, this would come from Gemini API
+    narrative = {
+        'overall_health': 'HEALTHY',
+        'executive_summary': 'Inventory levels are stable with no critical issues. Physical stock is within normal ranges for most commodities.',
+        'critical_count': 0,
+        'warning_count': 1,
+        'normal_count': 8,
+        'recommended_actions': [
+            'Monitor market prices for commodity A - trending upward',
+            'Review safety stock levels for commodity C',
+            'Schedule inventory count for warehouse B',
+            'Evaluate supplier delivery performance'
+        ]
     }
     
     return {
         'success': True,
-        'data': data
+        'data': narrative
     }
+
 
 
 @app.get('/health')

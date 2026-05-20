@@ -30,8 +30,6 @@ CREATE TABLE IF NOT EXISTS inventory_dashboard (
     
     -- Incoming & Market
     incoming_vessel_qty     NUMERIC(15, 3),
-    current_market_price    NUMERIC(15, 4),
-    replacement_cost        NUMERIC(15, 4),
 
     -- Computed fields
     calculated_import_inr   NUMERIC(15, 4) GENERATED ALWAYS AS (
@@ -94,7 +92,6 @@ SELECT
     SUM(incoming_vessel_qty) as total_incoming,
     SUM(physical_qty_value) as total_value,
     AVG(avg_per_mt_price_inr) as avg_price_inr,
-    AVG(current_market_price) as avg_market_price,
     MIN(no_of_days_of_stock) as min_days_of_stock,
     MAX(vessel_arrival_date) as latest_vessel_arrival
 FROM inventory_dashboard
