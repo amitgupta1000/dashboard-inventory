@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -488,3 +492,135 @@ tbody td {
 
 .panel-hint  { padding: 24px; text-align: center; color: var(--text); font-size: 14px; margin: 0; }
 .panel-error { padding: 24px; text-align: center; color: #b91c1c;    font-size: 14px; margin: 0; }
+
+/* ============================================================
+   Column Layout Optimization
+   ============================================================ */
+
+/* Ensure proper column distribution */
+main {
+  display: grid !important;
+}
+
+/* Responsive breakpoints */
+@media (max-width: 640px) {
+  main {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  main {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  main {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* Section cards equal height and spacing */
+section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+section:hover {
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1) !important;
+  transform: translateY(-3px);
+}
+
+/* Ensure scrollable content areas are properly sized */
+section .flex-1 {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+section .overflow-y-auto {
+  scrollbar-gutter: stable;
+}
+
+/* Pastel Color Scheme */
+:root {
+  --color-purple-pastel: #f3e8ff;
+  --color-cyan-pastel: #e0f2fe;
+  --color-emerald-pastel: #ecfdf5;
+  --color-rose-pastel: #ffe4e6;
+  --color-amber-pastel: #fef3c7;
+}
+
+/* Enhanced button styles */
+button {
+  letter-spacing: 0.3px;
+}
+
+/* Gradient utilities */
+.bg-gradient-purple-pastel {
+  background: linear-gradient(135deg, #f3e8ff 0%, #e9d5ff 100%);
+}
+
+.bg-gradient-cyan-pastel {
+  background: linear-gradient(135deg, #e0f2fe 0%, #cffafe 100%);
+}
+
+.bg-gradient-emerald-pastel {
+  background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+}
+
+/* Status badge improvements */
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.badge-ok {
+  background: linear-gradient(135deg, #d1fae5 0%, #d1fae5 100%);
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.badge-warning {
+  background: linear-gradient(135deg, #fef9e7 0%, #fef3c7 100%);
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.badge-critical {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+/* Premium header styles */
+header {
+  backdrop-filter: blur(10px);
+}
+
+/* Footer styling */
+footer {
+  backdrop-filter: blur(8px);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

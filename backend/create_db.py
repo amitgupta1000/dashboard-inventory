@@ -1,9 +1,8 @@
 """Creates the 'inventory' database on the Cloud SQL instance if it doesn't exist."""
 import os
 import sqlalchemy
-from backend.db import get_engine
+from database import engine
 
-engine = get_engine()
 with engine.connect() as conn:
     conn = conn.execution_options(isolation_level="AUTOCOMMIT")
     exists = conn.execute(

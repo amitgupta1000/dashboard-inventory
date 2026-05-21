@@ -1,6 +1,8 @@
-import os
+import os, sys
 from pathlib import Path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # Ensure current directory is
 from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
 
 # Load .env from backend/ directory FIRST - before any other imports
 env_path = Path(__file__).parent / 'backend' / '.env'
@@ -23,8 +25,10 @@ from typing import List, Dict, Any
 
 from backend.database import get_engine
 from backend import gcs
+from backend.routes.inventory import router as inventory_router
 
 app = FastAPI(title="Inventory Management API")
+app.include_router(inventory_router)
 
 # Configure CORS
 app.add_middleware(

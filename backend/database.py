@@ -1,130 +1,244 @@
 import os
-import logging
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base, relationship
+import sys
 from datetime import datetime
+
+from dotenv import load_dotenv
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base, relationship
+
+import logging
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# SSL certificates configured in main.py - reuse environment variables
+# Connection setup
 USE_SQLITE = os.environ.get("USE_SQLITE", "false").lower() == "true"
 
 if USE_SQLITE:
     DATABASE_URL = "sqlite+aiosqlite:///./jobs.db"
-    logger.info("📊 Using SQLite database: ./jobs.db")
+    SYNC_DATABASE_URL = "sqlite:///./jobs.db"
+    logger.info("Using SQLite database: ./jobs.db")
 else:
     password = os.environ.get("CLOUD_SQL_PASSWORD")
     if not password:
         raise ValueError("CLOUD_SQL_PASSWORD environment variable is required")
-    
+
     host = os.environ.get("CLOUD_SQL_HOST", "35.200.192.16")
     port = os.environ.get("CLOUD_SQL_PORT", "5432")
     user = os.environ.get("CLOUD_SQL_USER", "postgres")
     database = os.environ.get("CLOUD_SQL_DATABASE", "inventory")
-    
-    DATABASE_URL = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
-    logger.info(f"📊 Using Cloud SQL: postgresql+asyncpg://{user}:***@{host}:{port}/{database}")
 
-# Main engine for API requests
+    DATABASE_URL = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+    SYNC_DATABASE_URL = f"postgresql://{user}:{password}@{host}:{port}/{database}"
+    logger.info(f"Using Cloud SQL: postgresql+asyncpg://{user}:***@{host}:{port}/{database}")
+
+
+# Async engine/session for API routes
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
     pool_pre_ping=not USE_SQLITE,
-    **({"connect_args": {"ssl": "prefer", "server_settings": {"application_name": "crystal-email-service"}}} if not USE_SQLITE else {}),
+    **(
+        {"connect_args": {"ssl": "prefer", "server_settings": {"application_name": "inventory-api"}}}
+        if not USE_SQLITE
+        else {}
+    ),
 )
 
-AsyncSessionLocal = async_sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-# Scheduler engine: runs in background thread with separate event loop
+# Background scheduler async engine/session
 scheduler_engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
-    pool_pre_ping=False,  # Prevent connection issues across event loops
+    pool_pre_ping=False,
     poolclass=None,
-    **({"connect_args": {"ssl": "prefer", "server_settings": {"application_name": "crystal-email-service-scheduler"}}} if not USE_SQLITE else {}),
+    **(
+        {"connect_args": {"ssl": "prefer", "server_settings": {"application_name": "inventory-scheduler"}}}
+        if not USE_SQLITE
+        else {}
+    ),
 )
 
 SchedulerAsyncSessionLocal = async_sessionmaker(
-    scheduler_engine, class_=AsyncSession, expire_on_commit=False
+    scheduler_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
 )
 
 Base = declarative_base()
 
-logger.info("✅ Database initialized")
 
-class Job(Base):
-    __tablename__ = "jobs"
-    __table_args__ = {"schema": "email_service"} if not USE_SQLITE else {}
-    
+def get_engine():
+    """Return a sync SQLAlchemy engine for existing sync code paths."""
+    return create_engine(SYNC_DATABASE_URL, future=True)
+
+
+logger.info("Database initialized")
+
+
+class Commodity(Base):
+    __tablename__ = "commodities"
+
     id = Column(Integer, primary_key=True, index=True)
-    chemical_query = Column(String, index=True)
-    user_email = Column(String)  # Email for notifications
+    commodity_name = Column(String(255), unique=True, index=True, nullable=False)
+    commodity_code = Column(String(50), nullable=True)
+    category = Column(String(100), nullable=True)
+    unit_of_measure = Column(String(50), default="MT")
+    is_active = Column(Boolean, default=True)
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    status = Column(String, default="active") # active, closed
-    reminders_sent = Column(Boolean, default=False)
-    closed_at = Column(DateTime, nullable=True)
-    total_responses = Column(Integer, default=0)
-    last_summary_sent_at = Column(DateTime, nullable=True)  # For 12-hour summaries
-    closure_notification_sent = Column(Boolean, default=False)  # Track closure report
-    
-    suppliers = relationship("JobSupplierState", back_populates="job", cascade="all, delete-orphan")
-    insights = relationship("Insight", back_populates="job", cascade="all, delete-orphan")
-    emails = relationship("SupplierEmail", back_populates="job", cascade="all, delete-orphan")
 
-class JobSupplierState(Base):
-    __tablename__ = "job_supplier_states"
-    __table_args__ = {"schema": "email_service"} if not USE_SQLITE else {}
-    
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id" if USE_SQLITE else "email_service.jobs.id"), index=True)
-    company_name = Column(String)
-    email_id = Column(String, index=True)
-    domain = Column(String)
-    initial_email_sent_at = Column(DateTime, default=datetime.utcnow)
-    replied = Column(Boolean, default=False)
-    reply_received_at = Column(DateTime, nullable=True)
-    reminder_sent_at = Column(DateTime, nullable=True)
-    
-    job = relationship("Job", back_populates="suppliers")
-    emails = relationship("SupplierEmail", back_populates="supplier_state", cascade="all, delete-orphan")
+    daily_configs = relationship("CommodityDailyConfig", back_populates="commodity", cascade="all, delete-orphan")
+    inventory_records = relationship("DailyInventoryRecord", back_populates="commodity", cascade="all, delete-orphan")
 
-class SupplierEmail(Base):
-    __tablename__ = "supplier_emails"
-    __table_args__ = {"schema": "email_service"} if not USE_SQLITE else {}
-    
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id" if USE_SQLITE else "email_service.jobs.id"), index=True)
-    supplier_state_id = Column(Integer, ForeignKey("job_supplier_states.id" if USE_SQLITE else "email_service.job_supplier_states.id"), nullable=True)
-    email_type = Column(String)  # "outbound" or "inbound"
-    from_email = Column(String)
-    to_email = Column(String)
-    subject = Column(String)
-    body = Column(Text)
-    sent_at = Column(DateTime, default=datetime.utcnow, index=True)
-    gmail_message_id = Column(String, nullable=True, unique=True)
-    
-    job = relationship("Job", back_populates="emails")
-    supplier_state = relationship("JobSupplierState", back_populates="emails")
 
-class Insight(Base):
-    __tablename__ = "insights"
-    __table_args__ = {"schema": "email_service"} if not USE_SQLITE else {}
-    
+class Terminal(Base):
+    __tablename__ = "terminals"
+
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id" if USE_SQLITE else "email_service.jobs.id"), index=True)
-    supplier = Column(String, index=True)
-    contact_person = Column(String, nullable=True)
-    product = Column(String, nullable=True)
-    quantity = Column(String, nullable=True)
-    price = Column(String, nullable=True)
-    delivery_date = Column(String, nullable=True)
-    email_body = Column(Text, nullable=True)  # Complete email for drilldowns
-    extracted_at = Column(DateTime, default=datetime.utcnow)
-    
-    job = relationship("Job", back_populates="insights")
+    terminal_name = Column(String(255), index=True, nullable=False)
+    terminal_code = Column(String(50), nullable=True)
+    port = Column(String(100), nullable=True)
+    region = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    inventory_records = relationship("DailyInventoryRecord", back_populates="terminal", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("terminal_name", "port", name="uq_terminal_port"),
+    )
+
+
+class CommodityDailyConfig(Base):
+    __tablename__ = "commodity_daily_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    commodity_id = Column(Integer, ForeignKey("commodities.id"), index=True, nullable=False)
+    config_date = Column(Date, index=True, nullable=False)
+
+    cost_price_per_unit = Column(Numeric(12, 4), nullable=True)
+    market_price_per_unit = Column(Numeric(12, 4), nullable=True)
+    replacement_cost_per_unit = Column(Numeric(12, 4), nullable=True)
+
+    desired_stock_level = Column(Float, nullable=True)
+    min_stock_level = Column(Float, nullable=True)
+    max_stock_level = Column(Float, nullable=True)
+    target_inventory_days = Column(Float, default=30)
+
+    estimated_days_to_sale = Column(Float, default=15)
+    cash_realization_rate = Column(Float, default=0.95)
+    expected_gross_margin = Column(Float, nullable=True)
+    annual_cost_of_capital_rate = Column(Float, default=0.08)
+
+    is_finalized = Column(Boolean, default=False)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    commodity = relationship("Commodity", back_populates="daily_configs")
+
+    __table_args__ = (
+        UniqueConstraint("commodity_id", "config_date", name="uq_commodity_date_config"),
+    )
+
+
+class DailyInventoryReport(Base):
+    __tablename__ = "daily_inventory_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_date = Column(Date, index=True, nullable=False, unique=True)
+    file_name = Column(String(255), nullable=True)
+    submitted_by = Column(String(255), nullable=True)
+    total_records = Column(Integer, default=0)
+    total_value_at_cost = Column(Numeric(15, 2), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    inventory_records = relationship("DailyInventoryRecord", back_populates="report", cascade="all, delete-orphan")
+
+
+class DailyInventoryRecord(Base):
+    __tablename__ = "daily_inventory_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("daily_inventory_reports.id"), index=True, nullable=False)
+    commodity_id = Column(Integer, ForeignKey("commodities.id"), index=True, nullable=False)
+    terminal_id = Column(Integer, ForeignKey("terminals.id"), index=True, nullable=False)
+    record_date = Column(Date, index=True, nullable=False)
+
+    physical_stock = Column(Float, nullable=False)
+    unsold_qty = Column(Float, nullable=True)
+    sold_qty_pending = Column(Float, nullable=True)
+
+    num_vessels = Column(Integer, default=1)
+    earliest_vessel_date = Column(Date, nullable=True)
+    latest_vessel_date = Column(Date, nullable=True)
+    inventory_age_days = Column(Integer, nullable=True)
+
+    cost_price_per_unit = Column(Numeric(12, 4), nullable=True)
+    market_price_per_unit = Column(Numeric(12, 4), nullable=True)
+    value_at_cost = Column(Numeric(15, 4), nullable=True)
+    value_at_market = Column(Numeric(15, 4), nullable=True)
+    days_of_stock = Column(Float, nullable=True)
+
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    report = relationship("DailyInventoryReport", back_populates="inventory_records")
+    commodity = relationship("Commodity", back_populates="inventory_records")
+    terminal = relationship("Terminal", back_populates="inventory_records")
+
+    __table_args__ = (
+        UniqueConstraint("report_id", "commodity_id", "terminal_id", name="uq_report_commodity_terminal"),
+    )
+
+
+class InsightSnapshot(Base):
+    __tablename__ = "insight_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    record_id = Column(Integer, ForeignKey("daily_inventory_records.id"), index=True)
+    snapshot_date = Column(Date, index=True)
+    insight_type = Column(String(50))
+    insight_data = Column(Text, nullable=True)
+    alert_level = Column(String(50), nullable=True)
+    alert_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DataImportLog(Base):
+    __tablename__ = "data_import_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    import_date = Column(DateTime, default=datetime.utcnow, index=True)
+    file_name = Column(String(255))
+    file_size = Column(Integer)
+    num_records_imported = Column(Integer, default=0)
+    num_records_skipped = Column(Integer, default=0)
+    import_status = Column(String(50))
+    error_messages = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

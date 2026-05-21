@@ -9,16 +9,20 @@ This script:
 5. Creates email service tables in Cloud SQL
 6. Tests database connectivity
 """
-
-import os
-import sys
+import os, sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__))) 
 import json
 import asyncio
 from datetime import datetime
+
+from dotenv import load_dotenv
+# Explicitly point to the .env file in the parent directory (project root)
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path, override=True)
+
 import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 # Test imports
 try:
@@ -49,7 +53,8 @@ def test_gcp_auth():
     print("1️⃣  TESTING GCP AUTHENTICATION")
     print("="*70)
     
-    creds_path = os.path.expanduser(r"C:\gen-lang-client-0665888431-038f11096cad.json")
+    # Prefer environment variable, fallback to hardcoded path
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", os.path.expanduser(r"C:\gen-lang-client-0665888431-038f11096cad.json"))
     
     if not os.path.exists(creds_path):
         print(f"❌ Credentials file not found: {creds_path}")
@@ -112,8 +117,19 @@ def test_gmail_api(creds):
     print("="*70)
     
     try:
+        gmail_creds = creds
+        
+        # For Domain-Wide Delegation, impersonate a user and define required scopes
+        impersonate_user = os.environ.get("GMAIL_IMPERSONATE_USER")
+        if impersonate_user:
+            print(f"   Impersonating user: {impersonate_user}")
+            scopes = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.modify']
+            gmail_creds = creds.with_scopes(scopes).with_subject(impersonate_user)
+        else:
+            print("   ⚠️  GMAIL_IMPERSONATE_USER env var not set. Service account will try to access its own mailbox.")
+
         # Build Gmail service
-        service = build("gmail", "v1", credentials=creds)
+        service = build("gmail", "v1", credentials=gmail_creds, cache_discovery=False)
         
         # Get user profile
         profile = service.users().getProfile(userId="me").execute()
