@@ -242,3 +242,82 @@ class DataImportLog(Base):
     import_status = Column(String(50))
     error_messages = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class InventoryDetail(Base):
+    """Tracks vessel-level inventory details with pricing and stock quantities."""
+    __tablename__ = "inventory_detail"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Import & Vessel Information
+    date = Column(Date, nullable=False, index=True)
+    vessel_date = Column(Date, nullable=True)
+    vessel_name = Column(String(255), nullable=True, index=True)
+
+    # Product & Location
+    product_name = Column(String(255), nullable=False, index=True)
+    port_name = Column(String(255), nullable=True, index=True)
+    company_terminal_name = Column(String(255), nullable=True, index=True)
+
+    # Stock Quantities (in metric tons or relevant unit)
+    unsold_qty = Column(Numeric(15, 3), nullable=True)
+    sold_qty_pending_lifting = Column(Numeric(15, 3), nullable=True)
+    physical_stock = Column(Numeric(15, 3), nullable=True)
+    otr_qty = Column(Numeric(15, 3), nullable=True)  # Over The Road Quantity
+
+    # Pricing & Cost Information
+    purchase_price_USD = Column(Numeric(15, 4), nullable=True)
+    cif_duty = Column(Numeric(15, 4), nullable=True)  # CIF + Duty cost
+    cost_price_INR = Column(Numeric(15, 4), nullable=True)
+    average_selling_price_INR = Column(Numeric(15, 4), nullable=True)
+    exchange_rate = Column(Numeric(10, 4), nullable=True)  # USD to INR exchange rate
+
+    # Incoming Stock
+    incoming_stock = Column(Numeric(15, 3), nullable=True)  # Incoming stock (MT)
+    incoming_stock_date = Column(Date, nullable=True)  # Expected arrival date
+
+    # Metrics
+    no_of_days_of_stock = Column(Integer, nullable=True)
+
+    # Audit fields
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("date", "vessel_name", "product_name", "company_terminal_name", "port_name", 
+                        name="uq_inventory_detail_record"),
+    )
+
+
+class ProductDailyMetrics(Base):
+    """Tracks daily product-level performance and planning metrics."""
+    __tablename__ = "product_daily_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Identity
+    product_name = Column(String(255), nullable=False, index=True)
+    metric_date = Column(Date, nullable=False, index=True)
+
+    # Pricing Metrics (₹/MT or relevant currency)
+    market_price = Column(Numeric(15, 4), nullable=True)
+    replacement_cost = Column(Numeric(15, 4), nullable=True)
+
+    # Stock Level Targets
+    safety_stock_level = Column(Numeric(15, 3), nullable=True)
+    reorder_stock_level = Column(Numeric(15, 3), nullable=True)
+
+    # Planning Targets
+    target_monthly_sales = Column(Numeric(15, 3), nullable=True)  # MT or units per month
+    target_storage_cap_days = Column(Numeric(10, 2), nullable=True)  # max days inventory can be stored
+    target_inventory_days = Column(Numeric(10, 2), nullable=True)  # optimal inventory holding days
+    target_cash_realization_days = Column(Numeric(10, 2), nullable=True)  # days to convert inventory to cash
+
+    # Audit fields
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("product_name", "metric_date", name="uq_product_daily_metrics"),
+    )

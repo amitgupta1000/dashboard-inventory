@@ -16,7 +16,8 @@ from backend.database import (
     Terminal,
     CommodityDailyConfig,
     DailyInventoryReport,
-    DailyInventoryRecord
+    DailyInventoryRecord,
+    ProductDailyMetrics
 )
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
@@ -112,6 +113,47 @@ class CommodityDailyConfigResponse(BaseModel):
     annual_cost_of_capital_rate: float
     is_finalized: bool
     notes: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Product Daily Metrics Schemas
+class ProductDailyMetricsCreate(BaseModel):
+    product_name: str
+    metric_date: date = Field(default_factory=date.today)
+    market_price: Optional[Decimal] = None
+    replacement_cost: Optional[Decimal] = None
+    safety_stock_level: Optional[Decimal] = None
+    reorder_stock_level: Optional[Decimal] = None
+    target_monthly_sales: Optional[Decimal] = None
+    target_storage_cap_days: Optional[Decimal] = None
+    target_inventory_days: Optional[Decimal] = None
+    target_cash_realization_days: Optional[Decimal] = None
+
+class ProductDailyMetricsUpdate(BaseModel):
+    market_price: Optional[Decimal] = None
+    replacement_cost: Optional[Decimal] = None
+    safety_stock_level: Optional[Decimal] = None
+    reorder_stock_level: Optional[Decimal] = None
+    target_monthly_sales: Optional[Decimal] = None
+    target_storage_cap_days: Optional[Decimal] = None
+    target_inventory_days: Optional[Decimal] = None
+    target_cash_realization_days: Optional[Decimal] = None
+
+class ProductDailyMetricsResponse(BaseModel):
+    id: int
+    product_name: str
+    metric_date: date
+    market_price: Optional[Decimal]
+    replacement_cost: Optional[Decimal]
+    safety_stock_level: Optional[Decimal]
+    reorder_stock_level: Optional[Decimal]
+    target_monthly_sales: Optional[Decimal]
+    target_storage_cap_days: Optional[Decimal]
+    target_inventory_days: Optional[Decimal]
+    target_cash_realization_days: Optional[Decimal]
     created_at: datetime
     updated_at: datetime
 
@@ -384,6 +426,200 @@ async def copy_configs_from_previous_day(
             estimated_days_to_sale=prev_config.estimated_days_to_sale,
             cash_realization_rate=prev_config.cash_realization_rate,
             expected_gross_margin=prev_config.expected_gross_margin,
+            annual_cost_of_capital_rate=prev_config.annual_cost_of_capital_rate,
+            is_finalized=False,  # New configs start unfinialized
+            notes=prev_config.notes
+        )
+        db.add(new_config)
+        created_count += 1
+    
+    await db.commit()
+    
+    return {
+        "message": f"Copied {created_count} configs from {yesterday}, {existing_count} already exist for {config_date}"
+    }
+
+
+# ============================================================================
+# PRODUCT DAILY METRICS ENDPOINTS
+# ============================================================================
+
+@router.get("/product-metrics/latest", response_model=List[ProductDailyMetricsResponse])
+async def get_latest_product_metrics(db: AsyncSession = Depends(get_db)):
+    """Get the latest product daily metrics for all products (for form auto-population)."""
+    # Get the most recent metric_date
+    result = await db.execute(
+        select(func.max(ProductDailyMetrics.metric_date)).select_from(ProductDailyMetrics)
+    )
+    latest_date = result.scalar()
+    
+    if not latest_date:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No product metrics found in database"
+        )
+    
+    # Get all metrics for that date
+    result = await db.execute(
+        select(ProductDailyMetrics)
+        .where(ProductDailyMetrics.metric_date == latest_date)
+        .order_by(ProductDailyMetrics.product_name)
+    )
+    return result.scalars().all()
+
+
+@router.get("/product-metrics/{product_name}/latest", response_model=ProductDailyMetricsResponse)
+async def get_product_latest_metrics(product_name: str, db: AsyncSession = Depends(get_db)):
+    """Get the latest metrics for a specific product."""
+    result = await db.execute(
+        select(ProductDailyMetrics)
+        .where(ProductDailyMetrics.product_name == product_name)
+        .order_by(ProductDailyMetrics.metric_date.desc())
+        .limit(1)
+    )
+    metric = result.scalar_one_or_none()
+    
+    if not metric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No metrics found for product: {product_name}"
+        )
+    
+    return metric
+
+
+@router.get("/product-metrics/{product_name}", response_model=List[ProductDailyMetricsResponse])
+async def get_product_metrics_history(product_name: str, db: AsyncSession = Depends(get_db)):
+    """Get historical metrics for a specific product."""
+    result = await db.execute(
+        select(ProductDailyMetrics)
+        .where(ProductDailyMetrics.product_name == product_name)
+        .order_by(ProductDailyMetrics.metric_date.desc())
+    )
+    metrics = result.scalars().all()
+    
+    if not metrics:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No metrics found for product: {product_name}"
+        )
+    
+    return metrics
+
+
+@router.post("/product-metrics", response_model=ProductDailyMetricsResponse)
+async def create_product_metric(
+    metric: ProductDailyMetricsCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new product daily metric entry."""
+    # Check if entry already exists
+    result = await db.execute(
+        select(ProductDailyMetrics).where(
+            (ProductDailyMetrics.product_name == metric.product_name) &
+            (ProductDailyMetrics.metric_date == metric.metric_date)
+        )
+    )
+    
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Metric for {metric.product_name} on {metric.metric_date} already exists"
+        )
+    
+    new_metric = ProductDailyMetrics(**metric.dict())
+    db.add(new_metric)
+    await db.commit()
+    await db.refresh(new_metric)
+    
+    return new_metric
+
+
+@router.put("/product-metrics/{metric_id}", response_model=ProductDailyMetricsResponse)
+async def update_product_metric(
+    metric_id: int,
+    updates: ProductDailyMetricsUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update an existing product daily metric entry."""
+    result = await db.execute(
+        select(ProductDailyMetrics).where(ProductDailyMetrics.id == metric_id)
+    )
+    metric = result.scalar_one_or_none()
+    
+    if not metric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Metric {metric_id} not found"
+        )
+    
+    # Update only provided fields
+    update_data = updates.dict(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(metric, field, value)
+    
+    await db.commit()
+    await db.refresh(metric)
+    
+    return metric
+
+
+@router.put("/product-metrics/by-date", response_model=List[ProductDailyMetricsResponse])
+async def update_product_metrics_bulk(
+    new_date: date,
+    metrics_updates: List[ProductDailyMetricsUpdate],
+    db: AsyncSession = Depends(get_db)
+):
+    """Bulk update product metrics with a new date for all updated metrics."""
+    if not metrics_updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No metrics provided for update"
+        )
+    
+    updated_metrics = []
+    
+    for idx, updates in enumerate(metrics_updates):
+        update_data = updates.dict(exclude_unset=True)
+        if not update_data:
+            continue
+        
+        # For each product in the update, create new record with new date
+        # Or update existing record
+        product_name = update_data.get('product_name')
+        
+        # Try to find existing metric for new date
+        result = await db.execute(
+            select(ProductDailyMetrics).where(
+                (ProductDailyMetrics.product_name == product_name) &
+                (ProductDailyMetrics.metric_date == new_date)
+            )
+        )
+        metric = result.scalar_one_or_none()
+        
+        if not metric:
+            # Create new entry
+            metric = ProductDailyMetrics(
+                product_name=product_name,
+                metric_date=new_date,
+                **{k: v for k, v in update_data.items() if k != 'product_name'}
+            )
+            db.add(metric)
+        else:
+            # Update existing entry
+            for field, value in update_data.items():
+                if field != 'product_name':
+                    setattr(metric, field, value)
+        
+        updated_metrics.append(metric)
+    
+    await db.commit()
+    
+    # Refresh all metrics
+    for metric in updated_metrics:
+        await db.refresh(metric)
+    
+    return updated_metrics
             annual_cost_of_capital_rate=prev_config.annual_cost_of_capital_rate,
             is_finalized=False,  # New configs start unfinialized
             notes=f"Auto-copied from {yesterday}"

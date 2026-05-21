@@ -1,5 +1,6 @@
 import openpyxl
 from collections import defaultdict
+import csv
 
 file_path = '12-5-26.xlsx'
 wb = openpyxl.load_workbook(file_path)
@@ -20,15 +21,16 @@ for row in ws.iter_rows(min_row=3, max_row=ws.max_row, values_only=True):
         commodity_details[commodity_name]['ports'].add(port)
         commodity_details[commodity_name]['count'] += 1
 
-print('🏷️  Unique Commodities Found:', len(commodities))
-print()
-for commodity in sorted(commodities):
-    details = commodity_details[commodity]
-    count = details['count']
-    terminals = sorted(details['terminals'])
-    ports = sorted(details['ports'])
-    print(f"{commodity}:")
-    print(f"  Records: {count}")
-    print(f"  Terminals: {terminals}")
-    print(f"  Ports: {ports}")
-    print()
+# Output to CSV
+output_csv_path = 'unique_commodities.csv'
+with open(output_csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+    csv_writer = csv.writer(csvfile)
+    csv_writer.writerow(['Commodity Name'])  # Write header
+    for commodity in sorted(commodities):
+        csv_writer.writerow([commodity])
+
+print(f'🏷️  Unique Commodities Found: {len(commodities)}')
+print(f'CSV file created at: {output_csv_path}')
+print("Contents:")
+with open(output_csv_path, 'r', encoding='utf-8') as f:
+    print(f.read())

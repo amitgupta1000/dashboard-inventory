@@ -1,64 +1,49 @@
--- Inventory Dashboard Schema for Cloud SQL PostgreSQL
--- Based on the vessel arrival and inventory tracking spreadsheet
--- Run this against your Cloud SQL instance to create the schema.
+-- Inventory Detail Schema for Cloud SQL PostgreSQL
+-- Based on incoming vessel and inventory tracking data
+-- Columns: DATE, VESSEL DATE, VESSEL NAME, PRODUCT NAME, PORT, UNSOLD QTY, 
+--          SOLD QTY / PENDING LIFTING, PHYSICAL STOCK, OTR QTY, COMPANY TERMINAL NAME, 
+--          NO OF DAYS OF STOCK
 
-CREATE TABLE IF NOT EXISTS inventory_dashboard (
-    id                      SERIAL          PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS inventory_detail (
+    id                          SERIAL              PRIMARY KEY,
 
-    -- Vessel & Identity
-    vessel_arrival_date     DATE,
-    company_name            VARCHAR(255),
-    port_name               VARCHAR(255),
-    vessel_name             VARCHAR(255),
-    product_name            VARCHAR(255)    NOT NULL,
+    -- Import & Vessel Information
+    date                        DATE                NOT NULL,
+    vessel_date                 DATE,
+    vessel_name                 VARCHAR(255),
 
-    -- Stock days & quantities
-    no_of_days_of_stock     INTEGER,
-    bl_qty                  NUMERIC(15, 3),          -- Bill of Lading quantity
-    otr_qty                 NUMERIC(15, 3),          -- Over The Road quantity
-    physical_stock_on_port  NUMERIC(15, 3),
-    total_unsold_qty        NUMERIC(15, 3),
-    total_sold_qty          NUMERIC(15, 3),
+    -- Product & Location
+    product_name                VARCHAR(255)        NOT NULL,
+    port_name                   VARCHAR(255),
+    company_terminal_name       VARCHAR(255),
 
-    -- Pricing (per MT)
-    avg_per_mt_price_inr    NUMERIC(15, 4),          -- All inclusive INR price per MT
-    import_price_usd_mt     NUMERIC(15, 4),          -- Import price in USD per MT
-    exchange_rate           NUMERIC(10, 4),
-    
-    -- Values
-    physical_qty_value      NUMERIC(18, 2),          -- Total value of physical quantity
-    
-    -- Incoming & Market
-    incoming_vessel_qty     NUMERIC(15, 3),
+    -- Stock Quantities (in metric tons or relevant unit)
+    unsold_qty                  NUMERIC(15, 3),
+    sold_qty_pending_lifting    NUMERIC(15, 3),
+    physical_stock              NUMERIC(15, 3),
+    otr_qty                     NUMERIC(15, 3),     -- Over The Road Quantity
 
-    -- Computed fields
-    calculated_import_inr   NUMERIC(15, 4) GENERATED ALWAYS AS (
-                                CASE 
-                                    WHEN import_price_usd_mt IS NOT NULL 
-                                         AND exchange_rate IS NOT NULL
-                                    THEN import_price_usd_mt * exchange_rate
-                                    ELSE NULL
-                                END
-                            ) STORED,
+    -- Pricing & Cost Information
+    purchase_price_USD          NUMERIC(15, 4),
+    cif_duty                    NUMERIC(15, 4),     -- CIF + Duty cost
+    cost_price_INR              NUMERIC(15, 4),
+    average_selling_price_INR   NUMERIC(15, 4),
+    exchange_rate               NUMERIC(10, 4),     -- USD to INR exchange rate
 
-    -- Status indicator based on stock levels
-    stock_status            VARCHAR(20) GENERATED ALWAYS AS (
-                                CASE
-                                    WHEN no_of_days_of_stock IS NULL THEN 'UNKNOWN'
-                                    WHEN no_of_days_of_stock < 7 THEN 'CRITICAL'
-                                    WHEN no_of_days_of_stock < 15 THEN 'LOW'
-                                    WHEN no_of_days_of_stock < 30 THEN 'MODERATE'
-                                    ELSE 'ADEQUATE'
-                                END
-                            ) STORED,
+    -- Incoming Stock
+    incoming_stock              NUMERIC(15, 3),     -- Incoming stock (MT)
+    incoming_stock_date         DATE,               -- Expected arrival date
+
+    -- Metrics
+    no_of_days_of_stock         INTEGER,
 
     -- Audit fields
-    created_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    updated_at              TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    created_at                  TIMESTAMPTZ         NOT NULL DEFAULT NOW(),
+    updated_at                  TIMESTAMPTZ         NOT NULL DEFAULT NOW()
 );
 
 -- Auto-update updated_at on row modification
-CREATE OR REPLACE FUNCTION update_inventory_dashboard_timestamp()
+CREATE OR REPLACE FUNCTION update_inventory_detail_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -66,12 +51,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER inventory_dashboard_updated_at
-    BEFORE UPDATE ON inventory_dashboard
-    FOR EACH ROW EXECUTE FUNCTION update_inventory_dashboard_timestamp();
+CREATE TRIGGER inventory_detail_updated_at
+    BEFORE UPDATE ON inventory_detail
+    FOR EACH ROW EXECUTE FUNCTION update_inventory_detail_timestamp();
 
--- Indexes for dashboard queries
-CREATE INDEX IF NOT EXISTS idx_inventory_dashboard_company     ON inventory_dashboard (company_name);
+-- Indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_inventory_detail_product      ON inventory_detail (product_name);
+CREATE INDEX IF NOT EXISTS idx_inventory_detail_vessel       ON inventory_detail (vessel_name);
+CREATE INDEX IF NOT EXISTS idx_inventory_detail_terminal     ON inventory_detail (company_terminal_name);
+CREATE INDEX IF NOT EXISTS idx_inventory_detail_date         ON inventory_detail (date_of_import);
+CREATE INDEX IF NOT EXISTS idx_inventory_detail_port         ON inventory_detail (port_name);
 CREATE INDEX IF NOT EXISTS idx_inventory_dashboard_port        ON inventory_dashboard (port_name);
 CREATE INDEX IF NOT EXISTS idx_inventory_dashboard_product     ON inventory_dashboard (product_name);
 CREATE INDEX IF NOT EXISTS idx_inventory_dashboard_vessel      ON inventory_dashboard (vessel_name);
