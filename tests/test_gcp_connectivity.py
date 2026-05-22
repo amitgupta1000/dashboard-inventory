@@ -18,7 +18,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 # Explicitly point to the .env file in the parent directory (project root)
 env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
-load_dotenv(env_path, override=True)
+load_dotenv()
 
 import logging
 logging.basicConfig(level=logging.INFO)

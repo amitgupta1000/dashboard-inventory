@@ -89,7 +89,10 @@ Base = declarative_base()
 
 def get_engine():
     """Return a sync SQLAlchemy engine for existing sync code paths."""
-    return create_engine(SYNC_DATABASE_URL, future=True)
+    connect_args = {}
+    if not USE_SQLITE:
+        connect_args = {"sslmode": "require"}
+    return create_engine(SYNC_DATABASE_URL, future=True, connect_args=connect_args)
 
 
 logger.info("Database initialized")

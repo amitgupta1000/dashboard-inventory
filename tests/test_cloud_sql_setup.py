@@ -5,6 +5,11 @@ Simple GCP Connectivity & Database Setup Test using psycopg2
 import os
 import sys
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+load_dotenv(env_path, override=True)
 
 try:
     import psycopg2
