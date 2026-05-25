@@ -26,9 +26,13 @@ from typing import List, Dict, Any
 from backend.database import get_engine
 from backend import gcs
 from backend.routes.inventory import router as inventory_router
+from backend.routes.uploads import router as uploads_router
+from backend.routes.targets import router as targets_router
 
 app = FastAPI(title="Inventory Management API")
 app.include_router(inventory_router)
+app.include_router(uploads_router)
+app.include_router(targets_router)
 
 # Configure CORS
 app.add_middleware(
