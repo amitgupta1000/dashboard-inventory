@@ -9,10 +9,15 @@ interface Target {
   commodity_id: number;
   commodity_name: string;
   config_date: string;
-  desired_stock_level: number | null;
-  min_stock_level: number | null;
+  safe_stock_level: number | null;
+  re_order_level: number | null;
   max_stock_level: number | null;
+  target_storage_cap_days: number | null;
   target_inventory_days: number | null;
+  target_monthly_sales: number | null;
+  target_cash_realisation_days: number | null;
+  target_gross_margin: number | null;
+  annual_cost_of_capital_rate: number | null;
   is_finalized: boolean;
   notes: string | null;
 }
@@ -74,11 +79,14 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
     }
   };
 
-  const handleEdit = (target: Target, field: keyof Target, value: any) => {
+  const handleEdit = (target: Target, field: keyof Target, value: unknown) => {
     const key = target.id;
-    const current = editedTargets.get(key) || { ...target };
-    current[field] = value;
-    setEditedTargets(new Map(editedTargets.set(key, current)));
+    setEditedTargets((prev) => {
+      const next = new Map(prev);
+      const current = (next.get(key) || {}) as Partial<Target>;
+      next.set(key, { ...current, [field]: value } as Partial<Target>);
+      return next;
+    });
   };
 
   const hasChanges = editedTargets.size > 0;
@@ -95,10 +103,17 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
         if (!target) continue;
 
         await axios.put(`${API_BASE_URL}/api/targets/${target.commodity_id}`, {
-          desired_stock_level: updates.desired_stock_level ?? target.desired_stock_level,
-          min_stock_level: updates.min_stock_level ?? target.min_stock_level,
+          safe_stock_level: updates.safe_stock_level ?? target.safe_stock_level,
+          re_order_level: updates.re_order_level ?? target.re_order_level,
           max_stock_level: updates.max_stock_level ?? target.max_stock_level,
+          target_storage_cap_days: updates.target_storage_cap_days ?? target.target_storage_cap_days,
           target_inventory_days: updates.target_inventory_days ?? target.target_inventory_days,
+          target_monthly_sales: updates.target_monthly_sales ?? target.target_monthly_sales,
+          target_cash_realisation_days:
+            updates.target_cash_realisation_days ?? target.target_cash_realisation_days,
+          target_gross_margin: updates.target_gross_margin ?? target.target_gross_margin,
+          annual_cost_of_capital_rate:
+            updates.annual_cost_of_capital_rate ?? target.annual_cost_of_capital_rate,
           is_finalized: updates.is_finalized ?? target.is_finalized,
           notes: updates.notes ?? target.notes
         });
@@ -228,10 +243,15 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
                           )}
                         </div>
                         <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-gray-600">
-                          <div>Desired: {h.desired_stock_level || '-'}</div>
-                          <div>Min: {h.min_stock_level || '-'}</div>
+                          <div>Safe: {h.safe_stock_level || '-'}</div>
+                          <div>Re-order: {h.re_order_level || '-'}</div>
                           <div>Max: {h.max_stock_level || '-'}</div>
+                          <div>Storage Cap Days: {h.target_storage_cap_days || '-'}</div>
                           <div>Days: {h.target_inventory_days || '-'}</div>
+                          <div>Monthly Sales: {h.target_monthly_sales || '-'}</div>
+                          <div>Cash Realisation Days: {h.target_cash_realisation_days || '-'}</div>
+                          <div>Gross Margin: {h.target_gross_margin || '-'}</div>
+                          <div>Capital Rate: {h.annual_cost_of_capital_rate || '-'}</div>
                         </div>
                         {h.notes && (
                           <div className="mt-2 text-xs text-gray-600 italic">
@@ -259,16 +279,37 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
                         Commodity
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
-                        Desired Stock
+                        Safe Stock
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
-                        Min Level
+                        Re-order Level
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
                         Max Level
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Storage Cap Days
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
                         Target Days
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Monthly Sales
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Cash Realisation Days
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Gross Margin
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Capital Rate
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Finalized
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
+                        Notes
                       </th>
                       <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">
                         Actions
@@ -291,11 +332,11 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
                         <td className="px-4 py-3">
                           <input
                             type="number"
-                            value={getEditValue(target, 'desired_stock_level') || ''}
+                            value={getEditValue(target, 'safe_stock_level') || ''}
                             onChange={(e) =>
                               handleEdit(
                                 target,
-                                'desired_stock_level',
+                                'safe_stock_level',
                                 e.target.value ? parseFloat(e.target.value) : null
                               )
                             }
@@ -306,11 +347,26 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
                         <td className="px-4 py-3">
                           <input
                             type="number"
-                            value={getEditValue(target, 'min_stock_level') || ''}
+                            value={getEditValue(target, 're_order_level') || ''}
                             onChange={(e) =>
                               handleEdit(
                                 target,
-                                'min_stock_level',
+                                're_order_level',
+                                e.target.value ? parseFloat(e.target.value) : null
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="-"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            value={getEditValue(target, 'target_storage_cap_days') || ''}
+                            onChange={(e) =>
+                              handleEdit(
+                                target,
+                                'target_storage_cap_days',
                                 e.target.value ? parseFloat(e.target.value) : null
                               )
                             }
@@ -346,6 +402,85 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
                             }
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             placeholder="-"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            value={getEditValue(target, 'target_monthly_sales') || ''}
+                            onChange={(e) =>
+                              handleEdit(
+                                target,
+                                'target_monthly_sales',
+                                e.target.value ? parseFloat(e.target.value) : null
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="-"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            value={getEditValue(target, 'target_cash_realisation_days') || ''}
+                            onChange={(e) =>
+                              handleEdit(
+                                target,
+                                'target_cash_realisation_days',
+                                e.target.value ? parseFloat(e.target.value) : null
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="-"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={getEditValue(target, 'target_gross_margin') || ''}
+                            onChange={(e) =>
+                              handleEdit(
+                                target,
+                                'target_gross_margin',
+                                e.target.value ? parseFloat(e.target.value) : null
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="-"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={getEditValue(target, 'annual_cost_of_capital_rate') || ''}
+                            onChange={(e) =>
+                              handleEdit(
+                                target,
+                                'annual_cost_of_capital_rate',
+                                e.target.value ? parseFloat(e.target.value) : null
+                              )
+                            }
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="-"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(getEditValue(target, 'is_finalized'))}
+                            onChange={(e) => handleEdit(target, 'is_finalized', e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="text"
+                            value={(getEditValue(target, 'notes') as string | null) || ''}
+                            onChange={(e) => handleEdit(target, 'notes', e.target.value || null)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Optional notes"
                           />
                         </td>
                         <td className="px-4 py-3">
