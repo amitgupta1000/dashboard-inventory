@@ -16,7 +16,7 @@ Expected Excel column order (left → right):
 import sys
 import pandas as pd
 import sqlalchemy
-from backend.db import get_engine
+from database import get_engine
 
 EXCEL_PATH = sys.argv[1] if len(sys.argv) > 1 else "stock_report.xlsx"
 
