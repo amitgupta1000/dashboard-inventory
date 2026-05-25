@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import {
   Activity, RefreshCw, CheckCircle2, AlertCircle, Clock, Users,
   DollarSign, Award, FileText, ChevronRight, Search, Settings,
-  Sparkles, Package, TrendingUp, BarChart3, Database, Zap, Lock, X, ChevronLeft
+  Sparkles, Package, TrendingUp, BarChart3, Database, Zap, Lock, X, ChevronLeft, Upload
 } from 'lucide-react';
 import './styles/animations.css';
 import CommodityDailyConfigForm from './components/CommodityDailyConfigForm';
+import UploadPanel from './components/UploadPanel';
 
 function App() {
   const [inventory, setInventory] = useState([]);
@@ -21,6 +22,7 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -270,6 +272,14 @@ function App() {
             className="p-1.5 rounded-lg border border-slate-200/40 hover:bg-slate-100/50 text-slate-500 hover:text-slate-600 shrink-0 transition-all"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => setUploadPanelOpen(true)}
+            className="p-1.5 rounded-lg border border-blue-300/60 bg-blue-50 text-blue-600 hover:bg-blue-100 shrink-0 transition-all"
+            title="Open Upload Panel"
+          >
+            <Upload className="w-3.5 h-3.5" />
           </button>
 
           <button
@@ -539,6 +549,16 @@ function App() {
         </section>
 
       </main>
+
+      {/* Upload Panel Sidebar */}
+      <UploadPanel 
+        isOpen={uploadPanelOpen}
+        onClose={() => setUploadPanelOpen(false)}
+        onUploadSuccess={(type) => {
+          showToast(`${type} file uploaded successfully!`);
+          // Optionally refresh data here
+        }}
+      />
       
       {/* Footer */}
       <footer className="h-10 bg-white/50 backdrop-blur-sm border-t border-slate-200/40 px-6 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
