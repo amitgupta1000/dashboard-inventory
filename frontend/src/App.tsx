@@ -5,7 +5,6 @@ import {
   Sparkles, Package, TrendingUp, BarChart3, Database, Zap, Lock, X, ChevronLeft, Upload
 } from 'lucide-react';
 import './styles/animations.css';
-import CommodityDailyConfigForm from './components/CommodityDailyConfigForm';
 import UploadPanel from './components/UploadPanel';
 
 function App() {
@@ -21,12 +20,7 @@ function App() {
   const [formData, setFormData] = useState(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const CORRECT_PASSWORD = '12345';
 
   const API_BASE_URL = 'http://localhost:8000';
 
@@ -154,70 +148,11 @@ function App() {
     }
   };
 
-  const handleToggleLeftPanel = () => {
-    if (leftPanelOpen) {
-      setLeftPanelOpen(false);
-    } else {
-      setShowPasswordPrompt(true);
-    }
-  };
 
-  const handlePasswordSubmit = () => {
-    if (passwordInput === CORRECT_PASSWORD) {
-      setIsAuthenticated(true);
-      setLeftPanelOpen(true);
-      setShowPasswordPrompt(false);
-      setPasswordInput('');
-      showToast('Access granted!');
-    } else {
-      setPasswordInput('');
-      showToast('Incorrect password', 'error');
-    }
-  };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gradient-to-b from-slate-50 via-purple-50/30 to-slate-50 select-none overflow-hidden text-slate-800">
       
-      {/* Password Prompt Modal */}
-      {showPasswordPrompt && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 shadow-2xl max-w-sm w-full border border-slate-200/40 animate-fade-in">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center border border-purple-200">
-                <Lock className="w-5 h-5 text-purple-600" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-900">Authentication Required</h3>
-            </div>
-            <p className="text-sm text-slate-600 mb-4">Enter password to access the Inventory Configurator</p>
-            <input
-              type="password"
-              placeholder="Enter password"
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-              className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 mb-4 text-sm"
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  setShowPasswordPrompt(false);
-                  setPasswordInput('');
-                }}
-                className="flex-1 px-4 py-2.5 border border-slate-200 rounded-lg font-semibold text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePasswordSubmit}
-                className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-500 to-purple-600 rounded-lg font-semibold text-sm text-white hover:from-purple-600 hover:to-purple-700 transition-all"
-              >
-                Unlock
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       
       {/* Toast Alert */}
       {toast && (
@@ -281,113 +216,21 @@ function App() {
           >
             <Upload className="w-3.5 h-3.5" />
           </button>
-
-          <button
-            onClick={handleToggleLeftPanel}
-            className={`p-1.5 rounded-lg border transition-all ${leftPanelOpen ? 'border-slate-200/40 hover:bg-slate-100/50' : 'border-purple-300/60 bg-purple-50 text-purple-600'}`}
-            title={leftPanelOpen ? 'Hide Configurator' : 'Show Configurator (Protected)'}
-          >
-            {leftPanelOpen ? <ChevronLeft className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-          </button>
         </div>
       </header>
 
-      {/* Left Panel Modal Overlay */}
-      <div className={`fixed inset-0 z-30 transition-opacity duration-300 ${leftPanelOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-        <div className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${leftPanelOpen ? 'opacity-100' : 'opacity-0'}`} 
-          onClick={() => setLeftPanelOpen(false)} />
-        <div className={`absolute left-0 top-0 bottom-0 w-full sm:w-96 bg-gradient-to-br from-white to-purple-50/30 border-r border-purple-200/40 shadow-2xl transition-transform duration-300 overflow-y-auto ${
-          leftPanelOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}>
-          {/* Panel Content */}
-          <div className="h-full flex flex-col">
-            {/* Header */}
-            <div className="shrink-0 px-5 pt-5 pb-4 border-b border-purple-100/50 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">1. Inventory Configurator</h2>
-                <p className="text-[11px] text-slate-600 font-medium mt-1">Configure product parameters and pricing settings.</p>
-              </div>
-              <button
-                onClick={() => setLeftPanelOpen(false)}
-                className="p-2 hover:bg-purple-100 rounded-lg text-slate-500 hover:text-slate-700 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Panel Body */}
-            <div className="flex-1 flex flex-col justify-between px-5 py-4 space-y-4 min-h-0">
-              
-              {/* Search Inventory */}
-              <div className="shrink-0 space-y-2">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Select Product</span>
-                <div className="relative">
-                  <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input 
-                    type="text"
-                    placeholder="Search by product or company..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-2 text-[10px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-purple-400 w-full"
-                  />
-                </div>
-              </div>
-
-              {/* Inventory List */}
-              <div className="flex-1 flex flex-col min-h-0 space-y-2">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Inventory Items ({filteredInventory.length})</span>
-                
-                <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-1.5 space-y-1.5 bg-slate-50/50 custom-scrollbar">
-                  {loadingInventory ? (
-                    <div className="text-center py-8 text-[11px] text-slate-400">Loading...</div>
-                  ) : filteredInventory.map((item, idx) => (
-                    <div 
-                      key={idx}
-                      onClick={() => {
-                        setSelectedProduct(item);
-                        initializeForm(item);
-                      }}
-                      className={`p-2.5 rounded-lg border cursor-pointer transition-all duration-200 ${
-                        selectedProduct?.product_name === item.product_name
-                          ? 'bg-purple-50/80 border-purple-300'
-                          : 'bg-white border-slate-100/80 hover:border-slate-250'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start gap-2">
-                        <div className="min-w-0 flex-1">
-                          <span className="font-bold text-[10px] text-slate-900 block truncate">{item.product_name}</span>
-                          <p className="text-[8px] text-slate-500 truncate">{item.company_name} • {item.port_name}</p>
-                        </div>
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
-                          item.physical_stock > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                        }`}>
-                          {item.physical_stock.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Commodity Daily Configuration Webform */}
-              <CommodityDailyConfigForm apiBaseUrl={API_BASE_URL} onToast={showToast} />
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Main 2-Column Layout */}
-      <main className="flex-1 w-full grid grid-cols-2 gap-5 p-6 min-h-0 overflow-hidden auto-rows-fr">
+      <main className="flex-1 w-full flex gap-4 p-4 min-h-0 overflow-hidden">
 
         {/* ==========================================
-            COLUMN 2: INVENTORY MONITOR & ANALYTICS
+            COLUMN 1: INVENTORY MONITOR & ANALYTICS
             ========================================== */}
-        <section className="flex flex-col h-full bg-gradient-to-br from-white to-cyan-50/30 rounded-2xl border border-cyan-200/40 shadow-lg hover:shadow-xl transition-all duration-300 min-h-0 overflow-hidden">
+        <section className="flex flex-col flex-[2] min-w-0 h-full bg-gradient-to-br from-white to-cyan-50/30 rounded-2xl border border-cyan-200/40 shadow-lg hover:shadow-xl transition-all duration-300 min-h-0 overflow-hidden">
           {/* Header */}
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-cyan-100/50">
             <div className="flex items-center gap-2.5 mb-2">
               <span className="w-3 h-3 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-500 shadow-md"></span>
-              <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">2. Analytics & Monitor</h2>
+              <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">1. Analytics & Monitor</h2>
             </div>
             <p className="text-[11px] text-slate-600 font-medium">Track metrics and monitor inventory health status.</p>
           </div>
@@ -467,14 +310,14 @@ function App() {
         </section>
 
         {/* ==========================================
-            COLUMN 3: INTELLIGENCE INSIGHTS
+            COLUMN 2: INTELLIGENCE INSIGHTS
             ========================================== */}
-        <section className="flex flex-col h-full bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl border border-emerald-200/40 shadow-lg hover:shadow-xl transition-all duration-300 min-h-0 overflow-hidden">
+        <section className="flex flex-col flex-[1] min-w-0 h-full bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl border border-emerald-200/40 shadow-lg hover:shadow-xl transition-all duration-300 min-h-0 overflow-hidden">
           {/* Header */}
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-emerald-100/50">
             <div className="flex items-center gap-2.5 mb-2">
               <span className="w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-md"></span>
-              <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">3. Intelligence Insights</h2>
+              <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">2. Intelligence Insights</h2>
             </div>
             <p className="text-[11px] text-slate-600 font-medium">AI-powered analytics and operational recommendations.</p>
           </div>
