@@ -620,21 +620,6 @@ async def update_product_metrics_bulk(
         await db.refresh(metric)
     
     return updated_metrics
-            annual_cost_of_capital_rate=prev_config.annual_cost_of_capital_rate,
-            is_finalized=False,  # New configs start unfinialized
-            notes=f"Auto-copied from {yesterday}"
-        )
-        db.add(new_config)
-        created_count += 1
-    
-    await db.commit()
-    
-    return {
-        "status": "success",
-        "created": created_count,
-        "existing": existing_count,
-        "message": f"Copied {created_count} configs from {yesterday}, {existing_count} already exist for {config_date}"
-    }
 
 
 @router.post("/config/{config_id}/finalize")
