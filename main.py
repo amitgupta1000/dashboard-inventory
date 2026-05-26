@@ -28,11 +28,13 @@ from backend import gcs
 from backend.routes.inventory import router as inventory_router
 from backend.routes.uploads import router as uploads_router
 from backend.routes.targets import router as targets_router
+from backend.routes.market_data import router as market_data_router
 
 app = FastAPI(title="Inventory Management API")
 app.include_router(inventory_router)
 app.include_router(uploads_router)
 app.include_router(targets_router)
+app.include_router(market_data_router)
 
 # Configure CORS
 app.add_middleware(
