@@ -9,11 +9,12 @@ CSV Column Mapping:
 - min_stock_level → min_stock_level
 - max_stock_level → max_stock_level
 - target_inventory_holding_days → target_inventory_days
+- monthly_sales_target → monthly_sales_target (new field)
+- target_storage_cap_days → target_storage_cap_days (new field)
 - target_cash_realisation_days → estimated_days_to_sale
 - expected_gross_margin → expected_gross_margin
 - annual_cost_of_capital → annual_cost_of_capital_rate
 - product_name_alias → used for fuzzy matching if product_name lookup fails
-- monthly_sales_target, target_storage_cap_days → dropped (not in schema)
 
 Generated fields:
 - config_date → today's date
@@ -195,6 +196,8 @@ async def load_inventory_targets_from_csv(file_path: str, config_date: date = No
                 min_stock_level = _to_float(row.get('min_stock_level'))
                 max_stock_level = _to_float(row.get('max_stock_level'))
                 target_inventory_days = _to_float(row.get('target_inventory_holding_days'))
+                monthly_sales_target = _to_float(row.get('monthly_sales_target'))
+                target_storage_cap_days = _to_float(row.get('target_storage_cap_days'))
                 estimated_days_to_sale = _to_float(row.get('target_cash_realisation_days'))
                 expected_gross_margin = _to_float(row.get('expected_gross_margin'))
                 annual_cost_of_capital_rate = _to_float(row.get('annual_cost_of_capital'))
@@ -205,6 +208,8 @@ async def load_inventory_targets_from_csv(file_path: str, config_date: date = No
                     config.min_stock_level = min_stock_level
                     config.max_stock_level = max_stock_level
                     config.target_inventory_days = target_inventory_days
+                    config.monthly_sales_target = monthly_sales_target
+                    config.target_storage_cap_days = target_storage_cap_days
                     config.estimated_days_to_sale = estimated_days_to_sale
                     config.expected_gross_margin = expected_gross_margin
                     config.annual_cost_of_capital_rate = annual_cost_of_capital_rate
@@ -219,6 +224,8 @@ async def load_inventory_targets_from_csv(file_path: str, config_date: date = No
                         min_stock_level=min_stock_level,
                         max_stock_level=max_stock_level,
                         target_inventory_days=target_inventory_days,
+                        monthly_sales_target=monthly_sales_target,
+                        target_storage_cap_days=target_storage_cap_days,
                         estimated_days_to_sale=estimated_days_to_sale,
                         cash_realization_rate=None,
                         expected_gross_margin=expected_gross_margin,

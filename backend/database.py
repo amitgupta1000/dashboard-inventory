@@ -148,6 +148,8 @@ class CommodityDailyConfig(Base):
     min_stock_level = Column(Float, nullable=True)
     max_stock_level = Column(Float, nullable=True)
     target_inventory_days = Column(Float, default=30)
+    monthly_sales_target = Column(Float, nullable=True)
+    target_storage_cap_days = Column(Float, nullable=True)
 
     estimated_days_to_sale = Column(Float, default=15)
     cash_realization_rate = Column(Float, default=0.95)

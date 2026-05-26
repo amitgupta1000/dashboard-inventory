@@ -15,6 +15,8 @@ class TargetUpdate(BaseModel):
     min_stock_level: Optional[float] = None
     max_stock_level: Optional[float] = None
     target_inventory_days: Optional[float] = None
+    monthly_sales_target: Optional[float] = None
+    target_storage_cap_days: Optional[float] = None
     estimated_days_to_sale: Optional[float] = None
     cash_realization_rate: Optional[float] = None
     expected_gross_margin: Optional[float] = None
@@ -32,6 +34,8 @@ class TargetResponse(BaseModel):
     min_stock_level: Optional[float]
     max_stock_level: Optional[float]
     target_inventory_days: Optional[float]
+    monthly_sales_target: Optional[float]
+    target_storage_cap_days: Optional[float]
     estimated_days_to_sale: Optional[float]
     cash_realization_rate: Optional[float]
     expected_gross_margin: Optional[float]
