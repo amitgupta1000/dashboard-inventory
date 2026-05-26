@@ -64,6 +64,12 @@ engine = create_async_engine(
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+
+async def get_db():
+    """FastAPI dependency that provides an async DB session per request."""
+    async with AsyncSessionLocal() as session:
+        yield session
+
 # Background scheduler async engine/session
 scheduler_engine = create_async_engine(
     DATABASE_URL,
@@ -264,6 +270,7 @@ class InventoryDetail(Base):
     product_name = Column(String(255), nullable=False, index=True)
     port_name = Column(String(255), nullable=True, index=True)
     company_terminal_name = Column(String(255), nullable=True, index=True)
+    company_name = Column(String(255), nullable=True, index=True)
 
     # Stock Quantities (in metric tons or relevant unit)
     unsold_qty = Column(Numeric(15, 3), nullable=True)
@@ -290,39 +297,6 @@ class InventoryDetail(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("date", "vessel_name", "product_name", "company_terminal_name", "port_name", 
+        UniqueConstraint("date", "vessel_name", "product_name", "company_terminal_name", "company_name", "port_name", 
                         name="uq_inventory_detail_record"),
-    )
-
-
-class ProductDailyMetrics(Base):
-    """Tracks daily product-level performance and planning metrics."""
-    __tablename__ = "product_daily_metrics"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    # Identity
-    product_name = Column(String(255), nullable=False, index=True)
-    metric_date = Column(Date, nullable=False, index=True)
-
-    # Pricing Metrics (₹/MT or relevant currency)
-    market_price = Column(Numeric(15, 4), nullable=True)
-    replacement_cost = Column(Numeric(15, 4), nullable=True)
-
-    # Stock Level Targets
-    safety_stock_level = Column(Numeric(15, 3), nullable=True)
-    reorder_stock_level = Column(Numeric(15, 3), nullable=True)
-
-    # Planning Targets
-    target_monthly_sales = Column(Numeric(15, 3), nullable=True)  # MT or units per month
-    target_storage_cap_days = Column(Numeric(10, 2), nullable=True)  # max days inventory can be stored
-    target_inventory_days = Column(Numeric(10, 2), nullable=True)  # optimal inventory holding days
-    target_cash_realization_days = Column(Numeric(10, 2), nullable=True)  # days to convert inventory to cash
-
-    # Audit fields
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("product_name", "metric_date", name="uq_product_daily_metrics"),
     )

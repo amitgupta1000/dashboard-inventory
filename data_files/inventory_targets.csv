@@ -1,12 +1,12 @@
-product_name,product_name_alias,desired_stock_leve,min_stock_level,max_stock_level,monthly_sales_target,target_storage_cap_days,target_inventory_holding_days,target_cash_realisation_days,expected_gross_margin,annual_cost_of_capital,,,desired_stock_level: Optional[float] = None
-2-ETHYLHEXANOL,2 ETHYL HEXANOL,1050,700,500,500,60,30,90,12%,10%,,,    min_stock_level: Optional[float] = None
-ACETIC ACID,ACID,10500,7000,5000,5000,60,30,90,12%,10%,,,    max_stock_level: Optional[float] = None
-BUTYL ACETATE,BA,1050,700,500,500,60,30,90,12%,10%,,,    target_inventory_days: Optional[float] = None
-BUTYL DI  GLYCOL,BDG,1050,700,500,500,60,30,90,12%,10%,,,    estimated_days_to_sale: Optional[float] = None
-BUTYL GLYCOL,BG,1050,700,500,500,60,30,90,12%,10%,,,    cash_realization_rate: Optional[float] = None
-C-9,C-9,1050,700,500,500,60,30,90,12%,10%,,,    expected_gross_margin: Optional[float] = None
-CYCLOHEXANE,CYCLOHEXANE,2100,1400,1000,1000,60,30,90,12%,10%,,,    annual_cost_of_capital_rate: Optional[float] = None
-CYCLOHEXANONE,CYCLOHEXANONE,1050,700,500,500,60,30,90,12%,10%,,,    is_finalized: Optional[bool] = False
+product_name,product_name_alias,desired_stock_level,min_stock_level,max_stock_level,monthly_sales_target,target_storage_cap_days,target_inventory_holding_days,target_cash_realisation_days,expected_gross_margin,annual_cost_of_capital,,,desired_stock_level: Optional[float] = None
+2-ETHYLHEXANOL,2 ETHYL HEXANOL,1050,700,500,500,60,30,90,12%,10%,,,ï¿½ ï¿½ min_stock_level: Optional[float] = None
+ACETIC ACID,ACID,10500,7000,5000,5000,60,30,90,12%,10%,,,ï¿½ ï¿½ max_stock_level: Optional[float] = None
+BUTYL ACETATE,BA,1050,700,500,500,60,30,90,12%,10%,,,ï¿½ ï¿½ target_inventory_days: Optional[float] = None
+BUTYL DI  GLYCOL,BDG,1050,700,500,500,60,30,90,12%,10%,,,ï¿½ ï¿½ estimated_days_to_sale: Optional[float] = None
+BUTYL GLYCOL,BG,1050,700,500,500,60,30,90,12%,10%,,,ï¿½ ï¿½ cash_realization_rate: Optional[float] = None
+C-9,C-9,1050,700,500,500,60,30,90,12%,10%,,,ï¿½ ï¿½ expected_gross_margin: Optional[float] = None
+CYCLOHEXANE,CYCLOHEXANE,2100,1400,1000,1000,60,30,90,12%,10%,,,ï¿½ ï¿½ annual_cost_of_capital_rate: Optional[float] = None
+CYCLOHEXANONE,CYCLOHEXANONE,1050,700,500,500,60,30,90,12%,10%,,,ï¿½ ï¿½ is_finalized: Optional[bool] = False
 DEG,DEG,1050,700,500,500,60,30,90,12%,10%,,,
 EDC,EDC,1050,700,500,500,60,30,90,12%,10%,,,
 HEXANE,HEXANE,1050,700,500,500,60,30,90,12%,10%,,,

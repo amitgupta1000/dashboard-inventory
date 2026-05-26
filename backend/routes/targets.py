@@ -9,6 +9,14 @@ from backend.database import get_db, Commodity, CommodityDailyConfig
 router = APIRouter(prefix="/api/targets", tags=["targets"])
 
 
+def _inherit_or_default(value, previous_value, default=None):
+    if value is not None:
+        return value
+    if previous_value is not None:
+        return previous_value
+    return default
+
+
 # Pydantic Models
 class TargetUpdate(BaseModel):
     desired_stock_level: Optional[float] = None
@@ -81,10 +89,10 @@ async def get_current_targets(db: AsyncSession = Depends(get_db)):
 
         # Get all commodities with their latest config
         query = (
-            select(CommodityDailyConfig, Commodity.name)
+            select(CommodityDailyConfig, Commodity.commodity_name)
             .join(Commodity, CommodityDailyConfig.commodity_id == Commodity.id)
             .where(CommodityDailyConfig.config_date == latest_date)
-            .order_by(Commodity.name)
+            .order_by(Commodity.commodity_name)
         )
         result = await db.execute(query)
         configs = result.all()
@@ -99,6 +107,8 @@ async def get_current_targets(db: AsyncSession = Depends(get_db)):
                 min_stock_level=config[0].min_stock_level,
                 max_stock_level=config[0].max_stock_level,
                 target_inventory_days=config[0].target_inventory_days,
+                monthly_sales_target=config[0].monthly_sales_target,
+                target_storage_cap_days=config[0].target_storage_cap_days,
                 estimated_days_to_sale=config[0].estimated_days_to_sale,
                 cash_realization_rate=config[0].cash_realization_rate,
                 expected_gross_margin=config[0].expected_gross_margin,
@@ -165,32 +175,55 @@ async def update_target(
             new_config = CommodityDailyConfig(
                 commodity_id=commodity_id,
                 config_date=today,
-                desired_stock_level=target.desired_stock_level or (
-                    prev_config.desired_stock_level if prev_config else None
+                desired_stock_level=_inherit_or_default(
+                    target.desired_stock_level,
+                    prev_config.desired_stock_level if prev_config else None,
                 ),
-                min_stock_level=target.min_stock_level or (
-                    prev_config.min_stock_level if prev_config else None
+                min_stock_level=_inherit_or_default(
+                    target.min_stock_level,
+                    prev_config.min_stock_level if prev_config else None,
                 ),
-                max_stock_level=target.max_stock_level or (
-                    prev_config.max_stock_level if prev_config else None
+                max_stock_level=_inherit_or_default(
+                    target.max_stock_level,
+                    prev_config.max_stock_level if prev_config else None,
                 ),
-                target_inventory_days=target.target_inventory_days or (
-                    prev_config.target_inventory_days if prev_config else 30
+                target_inventory_days=_inherit_or_default(
+                    target.target_inventory_days,
+                    prev_config.target_inventory_days if prev_config else None,
+                    30,
                 ),
-                estimated_days_to_sale=target.estimated_days_to_sale or (
-                    prev_config.estimated_days_to_sale if prev_config else 15
+                monthly_sales_target=_inherit_or_default(
+                    target.monthly_sales_target,
+                    prev_config.monthly_sales_target if prev_config else None,
                 ),
-                cash_realization_rate=target.cash_realization_rate or (
-                    prev_config.cash_realization_rate if prev_config else 0.95
+                target_storage_cap_days=_inherit_or_default(
+                    target.target_storage_cap_days,
+                    prev_config.target_storage_cap_days if prev_config else None,
                 ),
-                expected_gross_margin=target.expected_gross_margin or (
-                    prev_config.expected_gross_margin if prev_config else None
+                estimated_days_to_sale=_inherit_or_default(
+                    target.estimated_days_to_sale,
+                    prev_config.estimated_days_to_sale if prev_config else None,
+                    15,
                 ),
-                annual_cost_of_capital_rate=target.annual_cost_of_capital_rate or (
-                    prev_config.annual_cost_of_capital_rate if prev_config else 0.08
+                cash_realization_rate=_inherit_or_default(
+                    target.cash_realization_rate,
+                    prev_config.cash_realization_rate if prev_config else None,
+                    0.95,
+                ),
+                expected_gross_margin=_inherit_or_default(
+                    target.expected_gross_margin,
+                    prev_config.expected_gross_margin if prev_config else None,
+                ),
+                annual_cost_of_capital_rate=_inherit_or_default(
+                    target.annual_cost_of_capital_rate,
+                    prev_config.annual_cost_of_capital_rate if prev_config else None,
+                    0.08,
                 ),
                 is_finalized=target.is_finalized,
-                notes=target.notes
+                notes=_inherit_or_default(
+                    target.notes,
+                    prev_config.notes if prev_config else None,
+                )
             )
             db.add(new_config)
 
@@ -198,8 +231,8 @@ async def update_target(
 
         return {
             "success": True,
-            "message": f"Target updated for {commodity.name}",
-            "commodity_name": commodity.name,
+            "message": f"Target updated for {commodity.commodity_name}",
+            "commodity_name": commodity.commodity_name,
             "config_date": today
         }
 
@@ -245,6 +278,8 @@ async def get_target_history(
                 min_stock_level=config.min_stock_level,
                 max_stock_level=config.max_stock_level,
                 target_inventory_days=config.target_inventory_days,
+                monthly_sales_target=config.monthly_sales_target,
+                target_storage_cap_days=config.target_storage_cap_days,
                 estimated_days_to_sale=config.estimated_days_to_sale,
                 cash_realization_rate=config.cash_realization_rate,
                 expected_gross_margin=config.expected_gross_margin,
@@ -258,7 +293,7 @@ async def get_target_history(
         return TargetHistoryResponse(
             success=True,
             message=f"Retrieved {len(history)} historical versions",
-            commodity_name=commodity.name,
+            commodity_name=commodity.commodity_name,
             history=history
         )
 

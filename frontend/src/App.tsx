@@ -8,48 +8,101 @@ import './styles/animations.css';
 import UploadPanel from './components/UploadPanel';
 
 function App() {
-  const [inventory, setInventory] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [alerts, setAlerts] = useState([]);
-  const [narrative, setNarrative] = useState(null);
+  const [inventory, setInventory] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [narrative, setNarrative] = useState<any>(null);
   const [loadingInventory, setLoadingInventory] = useState(false);
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [toast, setToast] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [toast, setToast] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [formData, setFormData] = useState(null);
+  const [formData, setFormData] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
+  const [asOfDate, setAsOfDate] = useState('');
+  const [backdate, setBackdate] = useState('');
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [drilldownRows, setDrilldownRows] = useState<any[]>([]);
+  const [loadingDrilldown, setLoadingDrilldown] = useState(false);
 
   const API_BASE_URL = 'http://localhost:8000';
 
-  const showToast = (message, type = 'success') => {
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const buildDateQuery = () => {
+    const params = new URLSearchParams();
+    if (asOfDate) params.set('as_of', asOfDate);
+    if (backdate) params.set('backdate', backdate);
+    return params.toString();
+  };
+
+  const fetchDrilldown = async (product: any = selectedProduct, asOfParam = asOfDate, backdateParam = backdate) => {
+    if (!product?.product_name || !product?.port_name || !product?.company_name) {
+      setDrilldownRows([]);
+      return;
+    }
+
+    setLoadingDrilldown(true);
+    try {
+      const params = new URLSearchParams({
+        product_name: product.product_name,
+        port_name: product.port_name,
+        company_name: product.company_name,
+      });
+      if (asOfParam) params.set('as_of', asOfParam);
+      if (backdateParam) params.set('backdate', backdateParam);
+
+      const response = await fetch(`${API_BASE_URL}/api/stock-analytics/drilldown?${params.toString()}`);
+      const data = await response.json();
+      if (data.success) {
+        setDrilldownRows(data.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+      setDrilldownRows([]);
+    } finally {
+      setLoadingDrilldown(false);
+    }
   };
 
   const fetchInventoryData = async () => {
     setLoadingInventory(true);
     try {
-      const [invRes, sumRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/inventory`),
-        fetch(`${API_BASE_URL}/api/inventory/summary`)
-      ]);
-      
+      const query = buildDateQuery();
+      const endpoint = query
+        ? `${API_BASE_URL}/api/stock-analytics/summary?${query}`
+        : `${API_BASE_URL}/api/stock-analytics/summary`;
+
+      const invRes = await fetch(endpoint);
       const invData = await invRes.json();
-      const sumData = await sumRes.json();
       
       if (invData.success) {
-        setInventory(invData.data.slice(0, 8)); // Top 8 items
-        if (invData.data.length > 0 && !selectedProduct) {
-          setSelectedProduct(invData.data[0]);
-          initializeForm(invData.data[0]);
+        const rows = invData.data || [];
+        setInventory(rows);
+        setSummary(invData.summary || null);
+        setAvailableDates(invData.available_dates || []);
+
+        if (invData.as_of_date && !asOfDate) setAsOfDate(invData.as_of_date);
+        if (invData.backdate && !backdate) setBackdate(invData.backdate);
+
+        if (rows.length > 0) {
+          const nextSelected = selectedProduct
+            ? rows.find((r: any) =>
+                r.product_name === selectedProduct.product_name
+                && r.port_name === selectedProduct.port_name
+                && r.company_name === selectedProduct.company_name
+              ) || rows[0]
+            : rows[0];
+
+          setSelectedProduct(nextSelected);
+          initializeForm(nextSelected);
+          await fetchDrilldown(nextSelected, invData.as_of_date || asOfDate, invData.backdate || backdate);
         }
-      }
-      
-      if (sumData.success) {
-        setSummary(sumData.summary);
       }
     } catch (e) {
       console.error(e);
@@ -62,9 +115,17 @@ function App() {
   const fetchAnalyticsData = async () => {
     setLoadingAnalytics(true);
     try {
+      const query = buildDateQuery();
+      const alertsUrl = query
+        ? `${API_BASE_URL}/api/intelligence/alerts?${query}`
+        : `${API_BASE_URL}/api/intelligence/alerts`;
+      const narrativeUrl = query
+        ? `${API_BASE_URL}/api/intelligence/narrative?${query}`
+        : `${API_BASE_URL}/api/intelligence/narrative`;
+
       const [alertsRes, narrativeRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/intelligence/alerts`),
-        fetch(`${API_BASE_URL}/api/intelligence/narrative`)
+        fetch(alertsUrl),
+        fetch(narrativeUrl)
       ]);
       
       const alertsData = await alertsRes.json();
@@ -90,11 +151,11 @@ function App() {
     fetchAnalyticsData();
   }, []);
 
-  const initializeForm = (product) => {
+  const initializeForm = (product: any) => {
     setFormData({
       product_name: product.product_name,
-      market_price: product.current_market_price || 0,
-      replacement_cost: product.replacement_cost || 0,
+      market_price: product.average_selling_price_inr || 0,
+      replacement_cost: product.cost_price_inr || 0,
       duty_tariff_percent: 0,
       safety_stock_qty: 0,
       reorder_point_qty: 0,
@@ -128,12 +189,13 @@ function App() {
     setRefreshing(false);
   };
 
-  const filteredInventory = inventory.filter(item =>
-    item.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.company_name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredInventory = inventory.filter((item: any) =>
+    (item.product_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.port_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (item.company_name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getAlertColor = (type) => {
+  const getAlertColor = (type: string) => {
     switch (type?.toLowerCase()) {
       case 'critical':
       case 'shortage':
@@ -169,8 +231,8 @@ function App() {
             <Package className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
           <div>
-            <h1 className="text-base font-extrabold text-slate-900 tracking-tight">Sumairo Inventory Console</h1>
-            <p className="text-[10px] text-slate-500 font-medium">Automated inventory intelligence & optimization</p>
+            <h1 className="text-[28px] font- text-violet-600 font-large ">Sumairo Inventory Console</h1>
+            <p className="text-[11px] text-slate-500 font-medium">Automated inventory intelligence & optimization</p>
           </div>
         </div>
 
@@ -259,6 +321,35 @@ function App() {
               </div>
             )}
 
+            {/* Date Filters */}
+            <div className="shrink-0 grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">As Of</label>
+                <select
+                  value={asOfDate}
+                  onChange={(e) => setAsOfDate(e.target.value)}
+                  className="w-full text-[10px] px-2 py-1.5 rounded-md border border-slate-200 bg-white"
+                >
+                  {(availableDates || []).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Compare To</label>
+                <select
+                  value={backdate}
+                  onChange={(e) => setBackdate(e.target.value)}
+                  className="w-full text-[10px] px-2 py-1.5 rounded-md border border-slate-200 bg-white"
+                >
+                  <option value="">None</option>
+                  {(availableDates || []).filter((d) => d !== asOfDate).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Health Status */}
             {narrative && (
               <div className="shrink-0 bg-slate-50/60 border border-slate-100 p-3 rounded-xl space-y-2">
@@ -279,27 +370,54 @@ function App() {
               </div>
             )}
 
-            {/* Alerts List */}
+            {/* Grouped Stock Summary */}
             <div className="flex-1 flex flex-col min-h-0 space-y-2">
-              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">⚠️ Top Alerts ({alerts.length})</span>
+              <div className="flex items-center justify-between">
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Stock Summary (Product + Port + Company)</span>
+                <button
+                  onClick={handleRefresh}
+                  className="text-[9px] px-2 py-1 rounded-md border border-cyan-200 text-cyan-700 hover:bg-cyan-50"
+                >
+                  Apply
+                </button>
+              </div>
+
+              <div className="shrink-0">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search product, port, company"
+                  className="w-full text-[10px] px-2 py-1.5 rounded-md border border-slate-200 bg-white"
+                />
+              </div>
               
               <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar">
-                {loadingAnalytics ? (
+                {loadingInventory ? (
                   <div className="text-center py-8 text-[11px] text-slate-400">Loading...</div>
-                ) : alerts.length === 0 ? (
-                  <div className="text-center py-4 text-[10px] text-emerald-600 font-semibold">✓ No critical alerts</div>
-                ) : alerts.map((alert, idx) => {
-                  const colors = getAlertColor(alert.alert_type);
+                ) : filteredInventory.length === 0 ? (
+                  <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No rows for selected filters</div>
+                ) : filteredInventory.slice(0, 30).map((row, idx) => {
+                  const colors = getAlertColor(row.alert_level);
                   const IconComponent = colors.icon;
                   return (
                     <div 
                       key={idx}
+                      onClick={() => {
+                        setSelectedProduct(row);
+                        fetchDrilldown(row);
+                      }}
                       className={`p-2 rounded-lg border ${colors.bg} ${colors.border} flex gap-2`}
                     >
                       <IconComponent className={`w-3.5 h-3.5 ${colors.text} flex-shrink-0 mt-0.5`} />
                       <div className="min-w-0 flex-1">
-                        <p className={`font-bold text-[9px] ${colors.text} truncate`}>{alert.item}</p>
-                        <p className={`text-[8px] ${colors.text} opacity-80 line-clamp-2`}>{alert.alert_message}</p>
+                        <p className={`font-bold text-[9px] ${colors.text} truncate`}>{row.product_name}</p>
+                        <p className={`text-[8px] ${colors.text} opacity-80 truncate`}>{row.port_name} • {row.company_name}</p>
+                        <div className="grid grid-cols-3 gap-2 mt-1 text-[8px] opacity-90">
+                          <span>Stock: {Number(row.physical_stock || 0).toFixed(0)}</span>
+                          <span>Δ: {Number(row.delta_physical_stock || 0).toFixed(0)}</span>
+                          <span>Margin: ₹{Number(row.margin_per_mt_inr || 0).toFixed(0)}</span>
+                        </div>
                       </div>
                     </div>
                   );
@@ -340,19 +458,55 @@ function App() {
                     </div>
                     <div>
                       <p className="text-[8px] font-bold text-slate-400 uppercase">Stock Value</p>
-                      <p className="text-xs font-bold text-emerald-600">₹{selectedProduct.stock_value.toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                      <p className="text-xs font-bold text-emerald-600">₹{Number(selectedProduct.stock_value || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase">Market Price</p>
-                      <p className="text-xs font-bold text-slate-900">₹{Number(selectedProduct.current_market_price).toLocaleString('en-US', { maximumFractionDigits: 2 })}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">Avg Selling/MT</p>
+                      <p className="text-xs font-bold text-slate-900">₹{Number(selectedProduct.average_selling_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</p>
                     </div>
                     <div>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase">Incoming</p>
-                      <p className="text-xs font-bold text-purple-600">{Number(selectedProduct.incoming_vessel_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">Cost/MT</p>
+                      <p className="text-xs font-bold text-purple-600">₹{Number(selectedProduct.cost_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</p>
                     </div>
                   </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">Margin/MT</p>
+                      <p className={`text-xs font-bold ${Number(selectedProduct.margin_per_mt_inr || 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        ₹{Number(selectedProduct.margin_per_mt_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">Vessels</p>
+                      <p className="text-xs font-bold text-slate-900">{Number(selectedProduct.vessel_count || 0)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Drilldown */}
+            {selectedProduct && (
+              <div className="shrink-0 space-y-2">
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Drill-down by Vessel</span>
+                <div className="max-h-40 overflow-y-auto border border-slate-100 rounded-xl p-2 bg-slate-50/50 custom-scrollbar space-y-1.5">
+                  {loadingDrilldown ? (
+                    <div className="text-center py-3 text-[10px] text-slate-400">Loading drill-down...</div>
+                  ) : drilldownRows.length === 0 ? (
+                    <div className="text-center py-3 text-[10px] text-slate-400">No vessel rows</div>
+                  ) : drilldownRows.slice(0, 12).map((v, idx) => (
+                    <div key={idx} className="p-2 bg-white border border-slate-100 rounded-lg">
+                      <p className="text-[9px] font-bold text-slate-800 truncate">{v.vessel_name}</p>
+                      <p className="text-[8px] text-slate-500">{v.vessel_date || 'NA'} • {v.terminal || 'NA'}</p>
+                      <div className="grid grid-cols-3 gap-2 mt-1 text-[8px] text-slate-700">
+                        <span>Stock: {Number(v.physical_stock || 0).toFixed(0)}</span>
+                        <span>Δ: {Number(v.delta_physical_stock || 0).toFixed(0)}</span>
+                        <span>Margin: ₹{Number(v.margin_per_mt_inr || 0).toFixed(0)}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -368,7 +522,7 @@ function App() {
                   {narrative.recommended_actions && narrative.recommended_actions.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
                       <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Recommendations</p>
-                      {narrative.recommended_actions.slice(0, 4).map((action, idx) => (
+                      {narrative.recommended_actions.slice(0, 4).map((action: string, idx: number) => (
                         <div key={idx} className="flex gap-2 text-[8px]">
                           <Zap className="w-2.5 h-2.5 text-amber-500 flex-shrink-0 mt-0.5" />
                           <span className="text-slate-700">{action}</span>

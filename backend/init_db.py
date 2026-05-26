@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from database import Base, get_engine, InventoryDetail, ProductDailyMetrics
+from database import Base, get_engine, InventoryDetail
 
 load_dotenv()
 
@@ -34,12 +34,7 @@ def init_db():
         if 'inventory_detail' in tables:
             columns = [col['name'] for col in inspector.get_columns('inventory_detail')]
             print(f"\n✓ inventory_detail columns: {len(columns)} fields")
-            print(f"  - Key fields: {', '.join([c for c in columns if c in ['exchange_rate', 'incoming_stock', 'incoming_stock_date', 'product_name', 'date']])}")
-        
-        # Verify ProductDailyMetrics columns
-        if 'product_daily_metrics' in tables:
-            columns = [col['name'] for col in inspector.get_columns('product_daily_metrics')]
-            print(f"\n✓ product_daily_metrics columns: {len(columns)} fields")
+            print(f"  - Key fields: {', '.join([c for c in columns if c in ['company_name', 'exchange_rate', 'incoming_stock', 'incoming_stock_date', 'product_name', 'date']])}")
         
         return True
         

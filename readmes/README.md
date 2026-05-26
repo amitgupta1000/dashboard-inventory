@@ -540,18 +540,18 @@ Editable table to configure thresholds and targets for each product.
 
 7. **Analytics Recalculation**
    ```
-   SQL views automatically refresh:
-   - v_product_intelligence_summary
-   - v_shipment_intelligence  
-   - v_critical_alerts
-   - v_inventory_narrative
+    Analytics are computed in backend runtime (main.py):
+    - grouped summary by Product + Port + Company
+    - backdate delta and target variance calculations
+    - derived alert cards and executive narrative
    ```
 
 8. **Frontend Display Update**
    ```
    User navigates to "Intelligence & Insights" tab
    React fetches from API:
-   - GET /api/intelligence/summary
+    - GET /api/stock-analytics/summary
+    - GET /api/stock-analytics/drilldown
    - GET /api/intelligence/alerts
    - GET /api/intelligence/narrative
    
@@ -561,9 +561,9 @@ Editable table to configure thresholds and targets for each product.
    - Product intelligence table
    ```
 
-### Example 2: Identifying and Acting on Critical Stock
+### Example 2: Identifying and Acting on Critical Trading Cover
 
-**Scenario**: Product stock drops below safety level
+**Scenario**: Product trading cover drops below minimum operating level
 
 **Automatic Detection Flow**:
 
@@ -573,9 +573,9 @@ Editable table to configure thresholds and targets for each product.
    VALUES (product='Toluene', physical_stock_on_port=1500, ...)
    ```
 
-2. **View Calculation**
+2. **Runtime Calculation**
    ```sql
-   -- v_product_intelligence_summary triggers
+    -- runtime trading analytics evaluates grouped status
    SELECT
        'Toluene' as item,
        1500 as total_stock,
@@ -588,29 +588,29 @@ Editable table to configure thresholds and targets for each product.
 
 3. **Alert Generation**
    ```sql
-   -- v_critical_alerts triggers
+    -- runtime alert builder assigns critical priority
    SELECT
        1 as priority,
-       '🔴 CRITICAL - Stock Below Safety Level' as alert_type,
+    '🔴 CRITICAL - Cover Below Minimum Operating Level' as alert_type,
        'Toluene @ STPL - KANDLA' as location,
-       'Stock critically low: 1500 MT (Safety: 2000 MT)' as alert_message
+    'Cover critically low: 1500 MT (Minimum: 2000 MT)' as alert_message
    ```
 
 4. **Narrative Generation**
    ```sql
-   -- v_inventory_narrative updates
+    -- runtime narrative generator updates summary
    overall_health = 'CRITICAL'
    executive_summary includes:
-   "⚠️ CRITICAL - 1 product(s) below safety stock..."
+    "⚠️ EXECUTION RISK - 1 product(s) below minimum operating cover..."
    recommended_actions includes:
-   "Urgent: Procure 500 MT to meet safety stock"
+    "Urgent: Rebalance 500 MT to restore minimum trading cover"
    ```
 
 5. **Frontend Alert**
    ```
    Insights Dashboard displays:
-   - Red banner in Executive Summary: CRITICAL
-   - Alert card: "🔴 CRITICAL - Toluene below safety stock"
+    - Red banner in Executive Summary: EXECUTION_RISK
+    - Alert card: "🔴 CRITICAL - Toluene below minimum operating cover"
    - Product table: Toluene row highlighted, Status = CRITICAL
    ```
 
@@ -622,15 +622,15 @@ Editable table to configure thresholds and targets for each product.
    4. User initiates procurement process
    ```
 
-### Example 3: Aged Inventory Detection
+### Example 3: Over-Aged Position Detection
 
-**Scenario**: Inventory stored beyond max days
+**Scenario**: Position held beyond max cycle days
 
 **Detection & Action Flow**:
 
 1. **Aging Calculation**
    ```sql
-   -- v_shipment_intelligence calculates:
+    -- runtime drilldown analytics calculates:
    days_in_stock = TODAY - record_date = 95 days
    max_storage_days = 90 days (from product_settings)
    
@@ -652,9 +652,9 @@ Editable table to configure thresholds and targets for each product.
 
 4. **Alert Priority**
    ```sql
-   -- v_critical_alerts assigns Priority 2
-   alert_type = '🟠 URGENT - Aged Inventory'
-   alert_message = 'Inventory aged: 95 days (Max: 90 days)'
+    -- runtime alert builder assigns Priority 2
+    alert_type = '🟠 URGENT - Over-Aged Position'
+    alert_message = 'Position age: 95 days (Cycle cap: 90 days)'
    ```
 
 5. **Alert Display**
@@ -668,7 +668,7 @@ Editable table to configure thresholds and targets for each product.
    {
      "aged_count": 1,
      "recommended_actions": [
-       "Liquidate 1 aged shipment(s)"
+    "Accelerate realization on 1 over-aged shipment(s)"
      ]
    }
    ```
@@ -689,20 +689,24 @@ Editable table to configure thresholds and targets for each product.
 
 ### Intelligence Endpoints
 
-**GET /api/intelligence/summary**
-- Product-wise intelligence with threshold comparisons
-- Response: `{success: bool, data: [{item, total_stock, status, ...}]}`
+**GET /api/stock-analytics/dates**
+- Returns available as-of dates for analytics
+- Response: `{success: bool, data: ["YYYY-MM-DD", ...]}`
 
-**GET /api/intelligence/shipments**
-- Shipment-level analysis with aging data
-- Response: `{success: bool, data: [{id, days_in_stock, aging_status, ...}]}`
+**GET /api/stock-analytics/summary**
+- Grouped trading summary (Product + Port + Company)
+- Response: `{success: bool, data: [{group_key, physical_stock, ...}]}`
+
+**GET /api/stock-analytics/drilldown**
+- Vessel-level drilldown for one grouped key
+- Response: `{success: bool, data: [{vessel_name, vessel_date, physical_stock, ...}]}`
 
 **GET /api/intelligence/alerts**
-- Prioritized critical alerts
+- Prioritized trading-risk alerts
 - Response: `{success: bool, data: [{priority, alert_type, item, message}]}`
 
 **GET /api/intelligence/narrative**
-- Natural language executive summary
+- Natural language trading-operations summary
 - Response: 
 ```json
 {
@@ -715,10 +719,6 @@ Editable table to configure thresholds and targets for each product.
   }
 }
 ```
-
-**GET /api/intelligence/product/{product_name}**
-- Product-specific narrative
-- Response: `{success: bool, data: {narrative, status, actions}}`
 
 ### File Management Endpoints
 
@@ -785,7 +785,7 @@ Editable table to configure thresholds and targets for each product.
    # Run these SQL scripts in order:
    # 1. schema_product_settings.sql
    # 2. schema_inventory_dashboard.sql
-   # 3. schema_intelligence_views.sql
+    # 3. schema_stock_analytics_bootstrap.sql
    ```
 
 4. **Start Backend Server**
@@ -848,11 +848,11 @@ Editable table to configure thresholds and targets for each product.
 
 | Feature | Source | Processing | Display |
 |---------|--------|-----------|---------|
-| **Stock Status** | Excel | View: v_product_intelligence_summary | Status badge with color |
+| **Stock Status** | Stock report CSV + targets | Runtime analytics in main.py | Status badge with color |
 | **Days of Stock** | Settings + Inventory | Calculation: stock/(target/30) | Numeric with color coding |
-| **Critical Alerts** | View: v_critical_alerts | Priority ranking | Alert cards with emoji |
-| **Aged Inventory** | View: v_shipment_intelligence | Age calculation: today-date | Aging status indicator |
-| **Natural Language** | View: v_inventory_narrative | Text generation algorithm | Executive summary card |
+| **Critical Alerts** | Runtime analytics output | Priority ranking | Alert cards with emoji |
+| **Aged Inventory** | Vessel dates + report date | Age calculation in runtime | Aging status indicator |
+| **Natural Language** | Runtime analytics output | Narrative generation in backend | Executive summary card |
 | **Profit Margin** | Excel pricing data | Calculation: (sell-buy)/buy*100 | Percentage with color |
 | **Gap Analysis** | Inventory + Settings | Shortage/excess calculation | Numeric with +/- indicator |
 
@@ -863,7 +863,7 @@ Editable table to configure thresholds and targets for each product.
 - All timestamps are stored in UTC (TIMESTAMPTZ)
 - Numeric fields use DECIMAL for precision (financial calculations)
 - File deduplication prevents re-importing same data
-- Views automatically refresh with new data (no manual trigger)
+- Alerts and narrative are generated from runtime analytics (no SQL view dependency)
 - Natural language summaries update in real-time
 - All data is immutable (updates create new records)
 - Soft deletes preserve audit trail
@@ -881,12 +881,13 @@ Editable table to configure thresholds and targets for each product.
 **Issue**: Alerts not showing up
 - Check: Product settings configured with correct thresholds
 - Check: Product name matches exactly in settings and inventory
-- Check: SQL views exist in database
+- Check: `inventory_detail` has data for selected as_of date
+- Check: target records exist in `commodity_daily_configs`
 
 **Issue**: Negative days of stock
 - Check: Monthly target volume is positive
 - Check: Stock quantity is positive
-- Check: Calculation logic in SQL views
+- Check: vessel date and report date are valid in source data
 
 **Issue**: Frontend not connecting to backend
 - Check: Backend running on localhost:8000
@@ -900,7 +901,7 @@ Editable table to configure thresholds and targets for each product.
 - `INTELLIGENCE_FEATURES.md` - Detailed intelligence system documentation
 - `schema_product_settings.sql` - Product configuration schema
 - `schema_inventory_dashboard.sql` - Main inventory schema  
-- `schema_intelligence_views.sql` - Analytics views and functions
+- `schema_stock_analytics_bootstrap.sql` - Current stock analytics schema
 
 ---
 

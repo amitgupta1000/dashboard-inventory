@@ -117,8 +117,8 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
           )}
         </div>
         <div className="flex-1">
-          <div className="font-semibold text-gray-800">{title}</div>
-          <div className="text-sm text-gray-600">{description}</div>
+          <div className="text-sm font-medium text-gray-800">{title}</div>
+          <div className="text-xs text-gray-600">{description}</div>
         </div>
         <Upload className="w-5 h-5 text-blue-500 flex-shrink-0" />
       </div>
@@ -144,8 +144,8 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
         {icon}
       </div>
       <div className="flex-1">
-        <div className="font-semibold text-gray-800">{title}</div>
-        <div className="text-sm text-gray-600">{description}</div>
+        <div className="text-sm font-medium text-gray-800">{title}</div>
+        <div className="text-xs text-gray-600">{description}</div>
       </div>
       {isExternal ? (
         <ExternalLink className="w-5 h-5 text-amber-500 flex-shrink-0" />
@@ -175,8 +175,8 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
                 <Upload className="w-6 h-6" />
               </div>
               <div>
-                <h2 className="text-2xl font-bold">Data Management Hub</h2>
-                <p className="text-sm text-blue-100">Upload files and manage your inventory data</p>
+                <h2 className="text-xl font-bold">Data Management Hub</h2>
+                <p className="text-xs text-blue-100">Upload files and manage your inventory data</p>
               </div>
             </div>
             {onClose && (
@@ -208,16 +208,16 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
                   <Loader className="w-5 h-5 flex-shrink-0 mt-0.5 animate-spin" />
                 )}
                 <div className="flex-1">
-                  <div className="font-semibold">{uploadStatus.message}</div>
-                  <div className="text-sm opacity-75">{uploadStatus.fileName}</div>
+                  <div className="text-sm font-medium">{uploadStatus.message}</div>
+                  <div className="text-xs opacity-75">{uploadStatus.fileName}</div>
                 </div>
               </div>
             )}
 
             {/* Upload Section */}
             <div>
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="text-2xl">📤</span>
+              <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="text-xl">📤</span>
                 File Uploads
               </h3>
               <div className="grid grid-cols-1 gap-3">
@@ -247,8 +247,8 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
 
             {/* Configuration Section */}
             <div>
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="text-2xl">⚙️</span>
+              <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="text-xl">⚙️</span>
                 Configuration
               </h3>
               <ActionButton
@@ -261,8 +261,8 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
 
             {/* Analytics Section */}
             <div>
-              <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                <span className="text-2xl">📊</span>
+              <h3 className="text-base font-bold text-gray-800 mb-4 flex items-center gap-2">
+                <span className="text-xl">📊</span>
                 Analytics & Actions
               </h3>
               <div className="grid grid-cols-1 gap-3">
@@ -284,7 +284,7 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
 
             {/* Footer */}
             <div className="pt-4 border-t border-gray-200">
-              <p className="text-xs text-gray-500 text-center">
+              <p className="text-[11px] text-gray-500 text-center">
                 All uploads are securely stored in Google Cloud Storage
               </p>
             </div>

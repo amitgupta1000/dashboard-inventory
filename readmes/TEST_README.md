@@ -202,8 +202,11 @@ record_id = insert_inventory_record(engine, record)
 - ✅ DELETE /api/product-settings/{id} - Delete setting
 
 ### Intelligence/Analytics
-- ⏳ GET /api/intelligence/summary - Intelligence summary (views needed)
-- ⏳ GET /api/intelligence/shipments - Shipment intelligence (views needed)
+- ✅ GET /api/stock-analytics/dates - Available analytics dates
+- ✅ GET /api/stock-analytics/summary - Grouped analytics summary
+- ✅ GET /api/stock-analytics/drilldown - Vessel-level drilldown
+- ✅ GET /api/intelligence/alerts - Derived alerts from analytics
+- ✅ GET /api/intelligence/narrative - Derived executive narrative
 
 ### File Operations
 - ⏳ POST /api/upload - Upload Excel file (GCS integration needed)
