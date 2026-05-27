@@ -684,24 +684,65 @@ python -c "import asyncio; \
 
 ### **Data Loading Workflow**
 
+#### **Prerequisite: Load Commodities First**
 ```bash
-# 1. Load commodity master data
-python -c "from backend.load_commodities import load_commodities_from_csv; \
-           load_commodities_from_csv('data_files/inventory_targets.csv')"
+python backend/load_commodities.py
+```
+- Creates 34 commodity master records from `inventory_targets.csv`
+- **Must run first** - other loaders depend on these existing
 
-# 2. Load inventory targets
-python -c "import asyncio; \
-           from backend.load_inventory_targets import load_inventory_targets_from_csv; \
-           asyncio.run(load_inventory_targets_from_csv('data_files/inventory_targets.csv'))"
+---
 
-# 3. Load market data
-python -c "import asyncio; \
-           from backend.load_market_data import load_market_data_from_excel; \
-           asyncio.run(load_market_data_from_excel('data_files/DAILY PRICE REPORT 22-05-2026.xlsx', '2026-05-22'))"
+#### **Complete Upload Sequence**
 
-# 4. Load stock report
+**Step 1: Load Inventory Targets** (Recommended)
+```bash
+python backend/load_inventory_targets.py
+```
+- Loads 34 commodity targets from `inventory_targets.csv`
+- Creates versioned configurations with `config_date` key
+- Includes: desired stock, min/max levels, sales targets, storage capacity, margins, etc.
+
+**Step 2: Upload Daily Price Report** ⚡
+```bash
+python backend/load_market_data.py
+```
+- **Source File**: `data_files/DAILY PRICE REPORT 22-05-2026.xlsx`
+- **Destination**: `market_data_hvb` table
+- **Purpose**: Market pricing data across 30 products × 8 ports = 60 records
+- **Content**: Product names formatted as `PRODUCT - PORT` (e.g., `TOLUENE - KANDLA`)
+- **Extras**: Extracts USD/INR exchange rate from report
+
+**Step 3: Upload Stock Report** 📦
+```bash
 python backend/load_stock_report.py
 ```
+- **Source Files**: `data_files/stock_report.csv` (preferred) or `data_files/stock_report.xlsx`
+- **Destination**: `inventory_detail` table
+- **Purpose**: Vessel-level stock data with calculated days of stock
+- **Key Calculation**: `no_of_days_of_stock = report_date - vessel_date` (derived, not from file)
+- **Status**: ⚠️ **WIP** - File exists but may need completion/testing
+
+---
+
+#### **Files Available in `data_files/`**
+- ✅ `daily_price_report.xlsx` - Daily market prices
+- ✅ `inventory_targets.csv` - Commodity master & targets
+- ✅ `stock_report.csv` - Vessel stock data (CSV format)
+- ✅ `stock_report.xlsx` - Vessel stock data (Excel format)
+
+---
+
+#### **Dependencies Chart**
+
+| Loader | Depends On | Creates Table | Records |
+|--------|-----------|----------------|---------|
+| `load_commodities` | None | `commodities` | 34 |
+| `load_inventory_targets` | `commodities` | `commodity_daily_configs` | 34 |
+| `load_market_data` | None (independent) | `market_data_hvb` | 60 |
+| `load_stock_report` | `commodities` | `inventory_detail` | WIP |
+
+**Note**: Daily price report is independent and can run anytime. Stock report needs commodities to exist for product name matching.
 
 ---
 
