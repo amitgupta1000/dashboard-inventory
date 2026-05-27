@@ -1,910 +1,839 @@
-# Inventory Management Dashboard - Complete Workflow Guide
+# Inventory Management Dashboard - Complete Implementation Guide
 
 ## 📋 Table of Contents
 1. [System Overview](#system-overview)
-2. [Data Input](#data-input)
-3. [Data Processing Pipeline](#data-processing-pipeline)
-4. [Database Architecture](#database-architecture)
-5. [Intelligence & Analytics Layer](#intelligence--analytics-layer)
-6. [Frontend Visualization](#frontend-visualization)
-7. [Complete Workflow Examples](#complete-workflow-examples)
-8. [API Reference](#api-reference)
-9. [Deployment & Setup](#deployment--setup)
+2. [Tech Stack](#tech-stack)
+3. [Database Architecture](#database-architecture)
+4. [Data Models & Schemas](#data-models--schemas)
+5. [API Endpoints](#api-endpoints)
+6. [Data Loading Pipeline](#data-loading-pipeline)
+7. [Frontend Architecture](#frontend-architecture)
+8. [Setup & Installation](#setup--installation)
+9. [Running the Application](#running-the-application)
 
 ---
 
 ## 🏗️ System Overview
 
-This is a **3-tier inventory intelligence system** that transforms raw Excel data into actionable business insights.
+**Dashboard Inventory** is a full-stack inventory management system that combines real-time stock tracking, target management, market pricing intelligence, and historical analytics in a single platform.
+
+**Core Capabilities**:
+- 📊 **Real-time inventory tracking** across commodities and terminals
+- 🎯 **Configurable targets** with automatic versioning via config_date
+- 💰 **Market pricing data** from daily Excel reports
+- 📈 **Historical analytics** with daily snapshots and insights
+- 📤 **Multi-source data loading** from Excel, CSV files
+- 🔄 **Async processing** with modern Python async/await patterns
+- 💾 **Dual database support** - PostgreSQL (production) and SQLite (development)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    INVENTORY MANAGEMENT DASHBOARD               │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  Input Layer      Processing Layer      Storage Layer      Insight Layer      UI Layer
-│  ───────────────  ───────────────────   ──────────────    ────────────────   ─────────
-│                                                                   │
-│  stock_report    FastAPI Backend       PostgreSQL        SQL Views &       React/Vite
-│  .xlsx (GCS) ──► Parser & Validator ──► Cloud SQL ────► Functions ────► Tailwind
-│                                                         (Intelligence)      CSS
-│  Product         Data Cleaning         Inventory        Product Analysis
-│  Settings ────►  Data Mapping          Tables           Alerts & Narrative
-│                  Deduplication                         Shipment Analytics
-│                  Validation
+┌──────────────────────────────────────────────────────────────────┐
+│                    INVENTORY DASHBOARD ARCHITECTURE              │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   Input Sources          Backend API              Database         UI
+│   ──────────────         ─────────────            ────────────    ────
+│                                                                    │
+│   Excel Files ───┐       FastAPI               PostgreSQL/SQLite  React 18.2
+│   CSV Files ────►├──────► (async routes)  ───► Tables:           TypeScript
+│   Web Uploads ──┘       - /api/targets         - commodities      Vite 7.3.3
+│                         - /api/market-data     - targets          Tailwind CSS
+│   GCS Bucket            - /api/inventory       - inventory        Lucide Icons
+│   (File uploads)        - /api/uploads         - market data
+│                                                 - snapshots
+│                                                 - logs
 │
-└─────────────────────────────────────────────────────────────────┘
+│  Data Loaders               Middleware
+│  ────────────              ──────────
+│  - load_commodities        - CORS
+│  - load_inventory_targets  - Async sessions
+│  - load_market_data        - Error handling
+│  - load_stock_report       - Validation
+│
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📥 Data Input
+## 🛠️ Tech Stack
 
-### 1. Primary Data Source: Excel File
-**Location**: `stock_report.xlsx` (uploaded to Google Cloud Storage)
-**Worksheet**: `STOCK SHEET`
+### **Backend**
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| FastAPI | Latest | REST API framework with async support |
+| SQLAlchemy | 2.0+ | ORM with async support (asyncpg for PostgreSQL, aiosqlite for SQLite) |
+| PostgreSQL | 14+ | Production database (Cloud SQL) |
+| SQLite | 3.x | Development/testing database (local) |
+| Pandas | 2.x | Data processing and CSV/Excel parsing |
+| Pydantic | 2.x | Data validation and schema definitions |
+| Python | 3.11+ | Async/await support, modern syntax |
 
-**Expected Columns**:
-```
-- VESSEL ARRIVAL DATE
-- Company Name (STPL, KRL, etc.)
-- PORT NAME (KANDLA, etc.)
-- VESSEL NAME
-- PRODUCT NAME (Toluene, IPA, DEG, Mixed Xylene, etc.)
-- NO OF DAYS OF STOCK
-- BL QTY (Bill of Lading)
-- OTR QTY (Over The Road)
-- PHYSICAL STOCK ON PORT
-- TOTAL UNSOLD QTY
-- TOTAL SOLD QTY
-- Avg. Per MT PRICE (inclusive) INR
-- IMPORT PRICE ($ / MT)
-- EXCHANGE RATE
-- PHYSICAL QTY. STOCK VALUE
-- INCOMING VESSEL QTY
-- CURRENT MARKET PRICE
-- REPLACEMENT COST
-```
+### **Frontend**
+| Component | Version | Purpose |
+|-----------|---------|---------|
+| React | 18.2.0 | UI framework |
+| TypeScript | 5.x | Type-safe JavaScript |
+| Vite | 7.3.3 | Lightning-fast build tool |
+| Tailwind CSS | 3.3.6 | Utility-first CSS framework |
+| Lucide React | Latest | Beautiful icon library |
+| Axios | Latest | HTTP client for API calls |
+| Vitest | Latest | Unit testing framework |
 
-### 2. Secondary Data Source: Product Settings
-**Origin**: Dashboard UI (`Product Settings` tab)
-**Purpose**: Define thresholds and targets for inventory management
-
-**Fields per Product**:
-- Safety Stock (MT) - Stock level triggering CRITICAL alert
-- Reorder Point (MT) - Stock level triggering WARNING alert
-- Max Storage Days - Maximum days inventory can stay in storage
-- Max Inventory Days - Inventory cycle window for projected sales
-- Monthly Target Volume (MT) - Expected monthly consumption
-- Notes - Additional product-specific notes
-
----
-
-## 🔄 Data Processing Pipeline
-
-### Step 1: File Upload & Validation
-```
-Excel File (GCS)
-    ↓
-[Python: pandas.read_excel()]
-    ↓
-Parse "STOCK SHEET" worksheet
-    ↓
-Validate column structure
-    ↓
-Check for required fields
-    ↓
-Remove blank rows & duplicates
-```
-
-**Code Location**: `main.py` - `_parse_excel()` function
-
-### Step 2: Data Mapping & Type Conversion
-```
-Raw DataFrame
-    ↓
-Map Excel columns → Database columns:
-├─ VESSEL ARRIVAL DATE → vessel_arrival_date (DATE)
-├─ Company Name → company_name (VARCHAR)
-├─ PORT NAME → port_name (VARCHAR)
-├─ PRODUCT NAME → product_name (VARCHAR)
-├─ PHYSICAL STOCK ON PORT → physical_stock (NUMERIC)
-├─ TOTAL UNSOLD QTY → total_unsold_qty (NUMERIC)
-├─ TOTAL SOLD QTY → total_sold_qty (NUMERIC)
-├─ Avg. Per MT PRICE → avg_per_mt_price_inr (NUMERIC)
-├─ IMPORT PRICE → import_price_usd_mt (NUMERIC)
-├─ EXCHANGE RATE → exchange_rate (NUMERIC)
-├─ PHYSICAL QTY. STOCK VALUE → physical_qty_value (NUMERIC)
-├─ INCOMING VESSEL QTY → incoming_vessel_qty (NUMERIC)
-├─ CURRENT MARKET PRICE → current_market_price (NUMERIC)
-└─ REPLACEMENT COST → replacement_cost (NUMERIC)
-    ↓
-Convert data types:
-├─ Dates → datetime.date
-├─ Numbers → DECIMAL/FLOAT
-└─ Text → VARCHAR
-    ↓
-Handle missing values (NULL handling)
-    ↓
-Validate numeric ranges
-```
-
-**Code Location**: `main.py` - `_parse_excel()` function, numeric conversion loop
-
-### Step 3: Duplicate Detection & Deduplication
-```
-Parsed Records
-    ↓
-Check processed_files table:
-├─ File hash (SHA256) - Prevents re-processing same file
-├─ GCS path - Unique identifier
-└─ Timestamp - When file was processed
-    ↓
-If file not previously processed:
-    → Mark as new file
-    → Continue to insertion
-    ↓
-If file already processed:
-    → Skip (prevents duplicates)
-    → Log skip event
-```
-
-**Code Location**: `main.py` - `refresh_inventory()` endpoint
-
-### Step 4: Database Insertion
-```
-Validated Records
-    ↓
-INSERT INTO inventory_dashboard (
-    vessel_arrival_date, company_name, port_name, product_name,
-    physical_stock_on_port, total_unsold_qty, total_sold_qty,
-    avg_per_mt_price_inr, import_price_usd_mt, exchange_rate,
-    physical_qty_value, incoming_vessel_qty,
-    current_market_price, replacement_cost
-)
-    ↓
-Record insertion in processed_files table:
-├─ gcs_path
-├─ filename
-├─ file_hash
-├─ rows_imported
-└─ processed_at timestamp
-    ↓
-Transaction commit
-```
-
-**Code Location**: `main.py` - `_insert_inventory()` function
+### **Database**
+| Database | Environment | Connection String |
+|----------|-------------|-------------------|
+| PostgreSQL | Production | `postgresql+asyncpg://user:pass@host:5432/inventory` |
+| SQLite | Development | `sqlite+aiosqlite:///./jobs.db` |
 
 ---
 
 ## 🗄️ Database Architecture
 
-### 1. Main Inventory Table: `inventory_dashboard`
-Stores all shipment records with:
-- Record metadata (dates, locations, products)
-- Quantities (physical stock, sold, unsold, incoming)
-- Pricing (import price, market price, replacement cost)
-- Calculated fields (status, computed import in INR)
+### Core Tables
 
+#### **1. commodities** (Master Data)
+Stores all commodity/product definitions
 ```sql
-CREATE TABLE inventory_dashboard (
+CREATE TABLE commodities (
     id SERIAL PRIMARY KEY,
-    vessel_arrival_date DATE,
-    company_name VARCHAR(255),
-    port_name VARCHAR(255),
-    product_name VARCHAR(255) NOT NULL,
-    physical_stock_on_port NUMERIC(15, 3),
-    total_unsold_qty NUMERIC(15, 3),
-    total_sold_qty NUMERIC(15, 3),
-    avg_per_mt_price_inr NUMERIC(15, 4),
-    import_price_usd_mt NUMERIC(15, 4),
-    exchange_rate NUMERIC(10, 4),
-    physical_qty_value NUMERIC(18, 2),
-    incoming_vessel_qty NUMERIC(15, 3),
-    current_market_price NUMERIC(15, 4),
-    replacement_cost NUMERIC(15, 4),
-    -- Computed fields
-    stock_status VARCHAR(20),
-    calculated_import_inr NUMERIC(15, 4),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### 2. Product Settings Table: `product_settings`
-Stores user-configured thresholds and targets:
-
-```sql
-CREATE TABLE product_settings (
-    id SERIAL PRIMARY KEY,
-    item VARCHAR(255) UNIQUE,
-    safety_stock NUMERIC(15, 3),
-    reorder_point NUMERIC(15, 3),
-    max_storage_days INTEGER,
-    max_inventory_days INTEGER,
-    monthly_target_volume NUMERIC(15, 3),
+    commodity_name VARCHAR(255) UNIQUE NOT NULL,
+    commodity_code VARCHAR(50),
+    category VARCHAR(100),
+    unit_of_measure VARCHAR(50),
     is_active BOOLEAN DEFAULT TRUE,
     notes TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
-### 3. File Processing Tracking Table: `processed_files`
-Prevents duplicate imports:
+**Key Fields**:
+- `commodity_name`: Unique identifier (e.g., "TOLUENE", "ACETIC ACID")
+- `is_active`: Filter for active commodities
+- Used as FK by targets, inventory records, and market data
 
+#### **2. commodity_daily_configs** (Inventory Targets - Versioned)
+Stores inventory targets with automatic versioning
 ```sql
-CREATE TABLE processed_files (
+CREATE TABLE commodity_daily_configs (
     id SERIAL PRIMARY KEY,
-    gcs_path VARCHAR(500) UNIQUE,
-    filename VARCHAR(255),
-    file_hash VARCHAR(64),
-    rows_imported INTEGER,
-    rows_updated INTEGER DEFAULT 0,
-    processed_at TIMESTAMPTZ DEFAULT NOW()
+    commodity_id INTEGER FOREIGN KEY,
+    config_date DATE NOT NULL,  -- Versioning key (multiple entries per commodity = versions)
+    
+    -- Target levels
+    desired_stock_level FLOAT,
+    min_stock_level FLOAT,
+    max_stock_level FLOAT,
+    monthly_sales_target FLOAT,
+    
+    -- Timing targets
+    target_inventory_days FLOAT DEFAULT 30,
+    target_storage_cap_days FLOAT,
+    estimated_days_to_sale FLOAT DEFAULT 15,
+    
+    -- Financial targets
+    expected_gross_margin FLOAT,
+    annual_cost_of_capital_rate FLOAT DEFAULT 0.08,
+    cash_realization_rate FLOAT DEFAULT 0.95,
+    
+    -- Metadata
+    is_finalized BOOLEAN DEFAULT FALSE,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    
+    UNIQUE (commodity_id, config_date)
+);
+```
+
+**Versioning Strategy**:
+- Multiple rows per commodity with different `config_date` values = version history
+- Highest `config_date` = current target configuration
+- API filters by `max(config_date)` to get latest targets
+- History accessible via `/api/targets/history/{commodity_id}`
+
+#### **3. daily_inventory_records** (Detailed Inventory)
+Stores daily inventory levels per commodity and terminal
+```sql
+CREATE TABLE daily_inventory_records (
+    id SERIAL PRIMARY KEY,
+    commodity_id INTEGER FOREIGN KEY,
+    terminal_id INTEGER FOREIGN KEY,
+    report_id INTEGER FOREIGN KEY,
+    record_date DATE,
+    
+    -- Stock levels
+    physical_stock FLOAT,
+    incoming_stock FLOAT,
+    total_stock FLOAT,
+    
+    -- Calculated fields
+    stock_status VARCHAR(50),  -- CRITICAL, WARNING, NORMAL, EXCESS
+    days_of_stock FLOAT,
+    
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### **4. market_data_hvb** (Daily Market Pricing)
+Stores daily market pricing from Excel reports
+```sql
+CREATE TABLE market_data_hvb (
+    id SERIAL PRIMARY KEY,
+    product_name VARCHAR(255),
+    port VARCHAR(100),
+    company_name VARCHAR(255),
+    
+    -- Physical stock
+    physical_stock FLOAT,
+    port_stock FLOAT,
+    
+    -- Pricing
+    market_price FLOAT,
+    selling_price FLOAT,
+    replacement_cost_dollar FLOAT,
+    replacement_cost_inr FLOAT,
+    
+    -- Metadata
+    report_date DATE,
+    usdinr_rate FLOAT,
+    
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Data Origin**: `load_market_data.py` loads from `DAILY PRICE REPORT 22-05-2026.xlsx`
+
+#### **5. daily_inventory_reports** (Report Headers)
+Groups inventory records by report/date
+```sql
+CREATE TABLE daily_inventory_reports (
+    id SERIAL PRIMARY KEY,
+    report_date DATE,
+    source_file VARCHAR(500),
+    total_records INTEGER,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### **6. terminals** (Terminal/Port Master)
+Stores terminal/port information
+```sql
+CREATE TABLE terminals (
+    id SERIAL PRIMARY KEY,
+    terminal_name VARCHAR(255) UNIQUE,
+    port_code VARCHAR(50),
+    region VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### **7. data_import_logs** (Audit Trail)
+Tracks all data imports and processing
+```sql
+CREATE TABLE data_import_logs (
+    id SERIAL PRIMARY KEY,
+    import_type VARCHAR(50),  -- 'CSV', 'EXCEL', 'API'
+    source_file VARCHAR(500),
+    rows_processed INTEGER,
+    rows_failed INTEGER,
+    status VARCHAR(50),  -- 'SUCCESS', 'PARTIAL', 'FAILED'
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### **8. inventory_detail** (Detailed Daily Tracking)
+Comprehensive daily inventory tracking
+```sql
+CREATE TABLE inventory_detail (
+    id SERIAL PRIMARY KEY,
+    commodity_id INTEGER,
+    terminal_id INTEGER,
+    incoming_stock_date DATE,
+    physical_stock NUMERIC(15,3),
+    physical_stock_value NUMERIC(18,2),
+    created_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
 ---
 
-## 🧠 Intelligence & Analytics Layer
+## 📊 Data Models & Schemas
 
-This layer transforms raw inventory data into actionable insights using SQL views and computed fields.
+### Pydantic Models (API Request/Response)
 
-### View 1: Product Intelligence Summary
-**Purpose**: Aggregates inventory by product and compares to thresholds
-
-**Key Calculations**:
-```
-Stock Status Classification:
-├─ CRITICAL: current_stock < safety_stock
-├─ WARNING: current_stock < reorder_point
-├─ EXCESS: current_stock > (monthly_target × 3)
-└─ NORMAL: within acceptable range
-
-Days of Stock Remaining:
-    = current_stock / (monthly_target_volume / 30)
-    = How many days until stock runs out
-
-Gap Analysis:
-    shortage_qty = (safety_stock - current_stock) if critical
-    excess_qty = (current_stock - optimal_level) if overstocked
-
-Profit Margin %:
-    = ((selling_price - purchase_price) / purchase_price) × 100
-
-Target Fulfillment %:
-    = (current_stock / monthly_target_volume) × 100
+#### **TargetUpdate** (PUT /api/targets/{commodity_id})
+```python
+class TargetUpdate(BaseModel):
+    desired_stock_level: Optional[float] = None
+    min_stock_level: Optional[float] = None
+    max_stock_level: Optional[float] = None
+    target_inventory_days: Optional[float] = None
+    monthly_sales_target: Optional[float] = None
+    target_storage_cap_days: Optional[float] = None
+    estimated_days_to_sale: Optional[float] = None
+    cash_realization_rate: Optional[float] = None
+    expected_gross_margin: Optional[float] = None
+    annual_cost_of_capital_rate: Optional[float] = None
+    is_finalized: Optional[bool] = False
+    notes: Optional[str] = None
 ```
 
-**Output Fields**:
-```json
-{
-  "item": "Toluene",
-  "total_stock_all_locations": 5000,
-  "safety_stock": 2000,
-  "reorder_point": 3500,
-  "days_of_stock_remaining": 45.5,
-  "stock_status": "NORMAL",
-  "shortage_qty": 0,
-  "excess_qty": 0,
-  "profit_margin_percent": 18.5,
-  "target_fulfillment_percent": 150
+#### **TargetResponse** (GET /api/targets)
+```python
+class TargetResponse(BaseModel):
+    id: int
+    commodity_id: int
+    commodity_name: str
+    config_date: date
+    desired_stock_level: Optional[float]
+    min_stock_level: Optional[float]
+    max_stock_level: Optional[float]
+    target_inventory_days: Optional[float]
+    monthly_sales_target: Optional[float]
+    target_storage_cap_days: Optional[float]
+    estimated_days_to_sale: Optional[float]
+    cash_realization_rate: Optional[float]
+    expected_gross_margin: Optional[float]
+    annual_cost_of_capital_rate: Optional[float]
+    is_finalized: bool
+    notes: Optional[str]
+```
+
+#### **MarketDataResponse** (GET /api/market-data)
+```python
+class MarketDataResponse(BaseModel):
+    id: int
+    product_name: str
+    port: str
+    company_name: str
+    physical_stock: float
+    port_stock: float
+    market_price: float
+    selling_price: float
+    replacement_cost_inr: float
+    report_date: date
+    usdinr_rate: float
+```
+
+---
+
+## 🔌 API Endpoints
+
+### **Targets Management** (`/api/targets`)
+
+```bash
+# Get all current targets (latest by config_date)
+GET /api/targets
+Response: [TargetResponse, ...]
+
+# Get target for specific commodity
+GET /api/targets/{commodity_id}
+Response: TargetResponse
+
+# Update target (creates new version if date changes)
+PUT /api/targets/{commodity_id}
+Body: TargetUpdate
+Response: TargetResponse
+
+# Get target version history
+GET /api/targets/history/{commodity_id}
+Response: [TargetResponse, ...]  # ordered by config_date DESC
+```
+
+### **Market Data** (`/api/market-data`)
+
+```bash
+# Get latest market data
+GET /api/market-data
+Params: ?product={name}, ?port={name}, ?report_date={date}
+Response: [MarketDataResponse, ...]
+
+# Get market data summary
+GET /api/market-data/summary
+Response: {
+  "total_records": 60,
+  "unique_products": 30,
+  "unique_ports": 8,
+  "latest_report_date": "2026-05-22"
 }
+
+# Get data for specific product across all ports
+GET /api/market-data/product/{product_name}
+Response: [MarketDataResponse, ...]
 ```
 
-### View 2: Shipment Intelligence
-**Purpose**: Analyzes individual shipments with aging analysis
+### **Inventory** (`/api/inventory`)
 
-**Key Calculations**:
-```
-Days in Stock:
-    = CURRENT_DATE - record_date
+```bash
+# Get inventory data
+GET /api/inventory
+Params: ?commodity={name}, ?terminal={name}
 
-Aging Status:
-├─ AGED: days_in_stock > max_storage_days
-├─ AGING_SOON: days_in_stock > (max_storage_days × 0.8)
-└─ FRESH: days_in_stock ≤ (max_storage_days × 0.8)
-
-Days to Deplete:
-    = physical_stock / (monthly_target_volume / 30)
-
-Price Variance %:
-    = ((market_price - purchase_price) / purchase_price) × 100
-
-Recommended Action:
-├─ URGENT_REORDER: stock < safety_stock
-├─ LIQUIDATE_AGED_STOCK: days_in_stock > max_storage_days
-├─ REORDER_RECOMMENDED: stock < reorder_point
-├─ REDUCE_PROCUREMENT: unsold > monthly_target × 3
-└─ MONITOR: normal situation
-
-Risk Flags Array:
-├─ LOW_STOCK
-├─ AGED_INVENTORY
-├─ EXCESS_STOCK
-└─ NEGATIVE_MARGIN
+# Get inventory summary
+GET /api/inventory/summary
 ```
 
-### View 3: Critical Alerts
-**Purpose**: Prioritized alert system
+### **File Uploads** (`/api/uploads`)
 
-**Priority Levels**:
-```
-Priority 1 (🔴 CRITICAL):
-    Stock < safety_stock
-    Action: Immediate procurement
+```bash
+# Upload file
+POST /api/uploads
+Body: FormData { file: File }
 
-Priority 2 (🟠 URGENT):
-    Inventory aged beyond max_storage_days
-    Action: Liquidate immediately
-
-Priority 3 (🟡 WARNING):
-    Stock < reorder_point
-    Action: Plan procurement
-
-Priority 4 (🔵 INFO):
-    Excess inventory > monthly_target × 3
-    Action: Review demand forecast
-```
-
-### View 4: Inventory Narrative (Natural Language)
-**Purpose**: Generates executive summary
-
-**Algorithm**:
-```
-Overall Health:
-    IF critical_count > 0 → "CRITICAL"
-    ELSE IF warning_count > 3 → "NEEDS_ATTENTION"
-    ELSE IF excess_count > 2 → "OVERSTOCKED"
-    ELSE → "HEALTHY"
-
-Executive Summary Generation:
-    1. Start with health status
-    2. Add counts of each status category
-    3. Note any aged inventory
-    4. Include average coverage days
-    5. Add profit margin info
-    6. Generate action items list
-
-Example Output:
-"Inventory Status: ⚠️ CRITICAL - 2 product(s) below safety 
-stock. 1 shipment(s) aged beyond storage limits. Average 
-inventory coverage: 18.5 days. Average margin: 15.3%."
-```
-
-**API Response**:
-```json
-{
-  "overall_health": "CRITICAL",
-  "executive_summary": "...",
-  "total_products": 10,
-  "critical_count": 2,
-  "warning_count": 3,
-  "excess_count": 1,
-  "normal_count": 4,
-  "avg_days_stock": 18.5,
-  "total_shortage": 5500,
-  "total_excess": 2000,
-  "avg_profit_margin": 15.3,
-  "aged_count": 1,
-  "aging_soon_count": 2,
-  "recommended_actions": [
-    "Urgent: Procure 5500 MT to meet safety stock",
-    "Liquidate 1 aged shipment(s)",
-    "Reduce procurement for 1 overstocked item(s)"
-  ]
-}
+# Get upload history
+GET /api/uploads/history
 ```
 
 ---
 
-## 🎨 Frontend Visualization
+## 📤 Data Loading Pipeline
 
-### 1. Intelligence & Insights Tab (Default View)
+### **Data Loaders**
 
-#### A. Executive Summary Card
-```
-┌─────────────────────────────────────────────────────┐
-│ 📊 Executive Summary        [HEALTHY/CRITICAL]     │
-├─────────────────────────────────────────────────────┤
-│                                                       │
-│ Natural language paragraph explaining inventory     │
-│ status with specific numbers and recommendations.   │
-│                                                       │
-│ ┌─────┬────────┬────────┬────────┐                │
-│ │Crit │Warning │ Excess │ Normal │                │
-│ │  2  │   3    │   1    │   4    │                │
-│ └─────┴────────┴────────┴────────┘                │
-│                                                       │
-│ ⚠️ Recommended Actions:                             │
-│ • Action 1                                          │
-│ • Action 2                                          │
-│ • Action 3                                          │
-└─────────────────────────────────────────────────────┘
+#### **1. load_commodities.py**
+Loads commodity/product master data from `inventory_targets.csv`
+
+```bash
+python -c "from backend.load_commodities import load_commodities_from_csv; \
+           load_commodities_from_csv('data_files/inventory_targets.csv')"
 ```
 
-#### B. Critical Alerts Panel
-```
-┌─────────────────────────────────────────────────────┐
-│ 🚨 Critical Alerts                                  │
-├─────────────────────────────────────────────────────┤
-│                                                       │
-│ ┌────────────────────────────────────────────────┐ │
-│ │🔴 CRITICAL - Stock Below Safety Level          │ │
-│ │Toluene @ STPL - KANDLA                         │ │
-│ │Stock critically low: 1500 MT (Safety: 2000 MT)│ │
-│ └────────────────────────────────────────────────┘ │
-│                                                       │
-│ ┌────────────────────────────────────────────────┐ │
-│ │🟠 URGENT - Aged Inventory                      │ │
-│ │IPA @ STPL - KANDLA                             │ │
-│ │Inventory aged: 95 days (Max: 90 days)          │ │
-│ └────────────────────────────────────────────────┘ │
-│                                                       │
-│ [Show more alerts...]                               │
-└─────────────────────────────────────────────────────┘
+**Process**:
+1. Read CSV with latin-1 encoding
+2. Extract unique product names
+3. Normalize names (uppercase, trim spaces)
+4. Insert into `commodities` table
+5. Result: 34 commodities loaded
+
+#### **2. load_inventory_targets.py**
+Loads target configurations from `inventory_targets.csv`
+
+```bash
+python -c "import asyncio; \
+           from backend.load_inventory_targets import load_inventory_targets_from_csv; \
+           asyncio.run(load_inventory_targets_from_csv('data_files/inventory_targets.csv'))"
 ```
 
-#### C. Product Intelligence Table
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 📈 Product Intelligence Summary                                 │
-├──────────┬────────┬──────────┬──────────┬──────┬──────┬────────┤
-│Product  │Status  │Current   │Days      │Margin│Actions        │
-│          │        │Stock     │Coverage  │%     │               │
-├──────────┼────────┼──────────┼──────────┼──────┼──────┼────────┤
-│Toluene  │CRITICAL│1,500 MT  │12 days   │18.5% │Details        │
-│IPA      │WARNING │2,100 MT  │22 days   │16.2% │Details        │
-│DEG      │NORMAL  │5,000 MT  │45 days   │22.1% │Details        │
-│...      │...     │...       │...       │...   │...             │
-└──────────┴────────┴──────────┴──────────┴──────┴──────┴────────┘
-```
+**CSV Column Mapping**:
+| CSV Column | Target Field | Notes |
+|---|---|---|
+| product_name | commodity_id (lookup) | Exact case-insensitive match |
+| desired_stock_leve | desired_stock_level | Fixed typo from CSV |
+| min_stock_level | min_stock_level | Direct mapping |
+| max_stock_level | max_stock_level | Direct mapping |
+| target_inventory_holding_days | target_inventory_days | Renamed |
+| monthly_sales_target | monthly_sales_target | New field (added May 27) |
+| target_storage_cap_days | target_storage_cap_days | New field (added May 27) |
+| target_cash_realisation_days | estimated_days_to_sale | Renamed |
+| expected_gross_margin | expected_gross_margin | Converted % to decimal |
+| annual_cost_of_capital | annual_cost_of_capital_rate | Converted % to decimal |
 
-#### D. Product Detail Modal (Click "Details")
-```
-┌─────────────────────────────────────────────────────┐
-│ Product Analysis: Toluene                        [X] │
-├─────────────────────────────────────────────────────┤
-│                                                       │
-│ Status: [CRITICAL]                                  │
-│                                                       │
-│ Product: Toluene. Current stock: 1,500 MT. Status: │
-│ CRITICAL. ⚠️ Critically low - 500 MT below safety  │
-│ stock. Immediate procurement required. Coverage:    │
-│ 12 days at current consumption rate.                │
-│                                                       │
-│ 🎯 Recommended Actions:                             │
-│ • URGENT: Order 500 MT immediately                 │
-│ • Monitor daily - low coverage                      │
-│                                                       │
-│                                              [Close] │
-└─────────────────────────────────────────────────────┘
+**Features**:
+- Exact commodity matching (no substring collisions)
+- Percentage to decimal conversion ("12%" → 0.12)
+- Versioning via config_date (today by default)
+- Automatic updates if same date exists
+- Result: 34/34 targets loaded successfully
+
+#### **3. load_market_data.py**
+Loads daily market pricing from Excel report
+
+```bash
+python -c "import asyncio; \
+           from backend.load_market_data import load_market_data_from_excel; \
+           asyncio.run(load_market_data_from_excel('data_files/DAILY PRICE REPORT 22-05-2026.xlsx', '2026-05-22'))"
 ```
 
-### 2. Inventory Dashboard Tab
+**Excel Processing**:
+- Reads `DAILY PRICE REPORT 22-05-2026.xlsx`
+- Extracts USD/INR rate from last row
+- Maps 60 columns to schema
+- Parses "PRODUCT - PORT" format into separate columns
+- Result: 60 rows loaded (30 unique products, 8 ports)
 
-Shows all raw inventory records with sortable, paginated table.
+#### **4. load_stock_report.py** (Work in Progress)
+Loads detailed stock reports from `stock_report.xlsx`
 
-### 3. Product Settings Tab
+**Features**:
+- Commodity-level stock tracking
+- Terminal-specific quantities
+- Daily inventory snapshots
+- Audit trail of changes
 
-Editable table to configure thresholds and targets for each product.
+#### **5. migrate_add_target_fields.py**
+Database migration script to add new columns
+
+```bash
+python backend/migrate_add_target_fields.py
+```
+
+**Adds**:
+- `monthly_sales_target` FLOAT
+- `target_storage_cap_days` FLOAT
 
 ---
 
-## 📊 Complete Workflow Examples
+## 🎨 Frontend Architecture
 
-### Example 1: New Stock Report Upload
+### **React Components**
 
-**Scenario**: Excel file uploaded to GCS bucket with new shipment data
+#### **UploadPanel.tsx** (Modal - 330 lines)
+Main data management hub with 5 action buttons:
 
-**Step-by-Step Flow**:
+**Button Organization**:
+1. 📤 **File Uploads** (3 buttons)
+   - Upload Inventory
+   - Upload Market Data
+   - Upload Sales Data
 
-1. **File Uploaded to GCS**
-   ```
-   stock_report.xlsx → GCS bucket (dashboard-inventory)
-   ```
+2. ⚙️ **Configuration** (1 button)
+   - Review & Update Targets
 
-2. **Manual Refresh Trigger**
-   ```
-   User clicks "Refresh Data" or system runs scheduled job
-   POST /api/refresh
-   ```
+3. 📊 **Analytics & Actions** (2 buttons)
+   - View Insights
+   - Manage Suppliers
 
-3. **File Detection & Processing**
-   ```
-   FastAPI backend:
-   - List all files in GCS bucket
-   - Check processed_files table for duplicates
-   - Download new files
-   ```
+**Features**:
+- Centered modal overlay with backdrop
+- Integrated TargetEditor as child component
+- File upload handling
+- Status alerts (saving, success, error)
 
-4. **Excel Parsing**
-   ```python
-   df = pd.read_excel(file_bytes, sheet_name="STOCK SHEET")
-   # Map columns to database schema
-   # Convert data types (string → date, text → numeric)
-   # Remove blanks and validate
-   ```
+#### **TargetEditor.tsx** (Modal - 380 lines)
+Commodity targets management with version history
 
-5. **Database Insertion**
-   ```sql
-   INSERT INTO inventory_dashboard (...) VALUES (...)
-   COMMIT TRANSACTION
-   ```
+**Features**:
+- Table view of all 34 commodities
+- Editable fields (stock levels, days, targets)
+- Track modified rows in Map
+- "History" button shows all config_date versions
+- Batch save (only modified rows sent to API)
+- Real-time status feedback
 
-6. **Duplicate Prevention**
-   ```sql
-   INSERT INTO processed_files (gcs_path, file_hash, rows_imported, processed_at)
-   ```
-
-7. **Analytics Recalculation**
-   ```
-    Analytics are computed in backend runtime (main.py):
-    - grouped summary by Product + Port + Company
-    - backdate delta and target variance calculations
-    - derived alert cards and executive narrative
-   ```
-
-8. **Frontend Display Update**
-   ```
-   User navigates to "Intelligence & Insights" tab
-   React fetches from API:
-    - GET /api/stock-analytics/summary
-    - GET /api/stock-analytics/drilldown
-   - GET /api/intelligence/alerts
-   - GET /api/intelligence/narrative
-   
-   Frontend renders:
-   - Executive summary card
-   - Critical alerts panel
-   - Product intelligence table
-   ```
-
-### Example 2: Identifying and Acting on Critical Trading Cover
-
-**Scenario**: Product trading cover drops below minimum operating level
-
-**Automatic Detection Flow**:
-
-1. **Data Inserted**
-   ```sql
-   INSERT INTO inventory_dashboard 
-   VALUES (product='Toluene', physical_stock_on_port=1500, ...)
-   ```
-
-2. **Runtime Calculation**
-   ```sql
-    -- runtime trading analytics evaluates grouped status
-   SELECT
-       'Toluene' as item,
-       1500 as total_stock,
-       2000 as safety_stock,
-       CASE 
-           WHEN 1500 < 2000 THEN 'CRITICAL'  -- ← Status assigned
-       END as stock_status,
-       (2000 - 1500) as shortage_qty  -- 500 MT shortage
-   ```
-
-3. **Alert Generation**
-   ```sql
-    -- runtime alert builder assigns critical priority
-   SELECT
-       1 as priority,
-    '🔴 CRITICAL - Cover Below Minimum Operating Level' as alert_type,
-       'Toluene @ STPL - KANDLA' as location,
-    'Cover critically low: 1500 MT (Minimum: 2000 MT)' as alert_message
-   ```
-
-4. **Narrative Generation**
-   ```sql
-    -- runtime narrative generator updates summary
-   overall_health = 'CRITICAL'
-   executive_summary includes:
-    "⚠️ EXECUTION RISK - 1 product(s) below minimum operating cover..."
-   recommended_actions includes:
-    "Urgent: Rebalance 500 MT to restore minimum trading cover"
-   ```
-
-5. **Frontend Alert**
-   ```
-   Insights Dashboard displays:
-    - Red banner in Executive Summary: EXECUTION_RISK
-    - Alert card: "🔴 CRITICAL - Toluene below minimum operating cover"
-   - Product table: Toluene row highlighted, Status = CRITICAL
-   ```
-
-6. **User Action**
-   ```
-   1. User sees alert
-   2. Clicks "Details" on Toluene row
-   3. Modal shows: "URGENT: Order 500 MT immediately"
-   4. User initiates procurement process
-   ```
-
-### Example 3: Over-Aged Position Detection
-
-**Scenario**: Position held beyond max cycle days
-
-**Detection & Action Flow**:
-
-1. **Aging Calculation**
-   ```sql
-    -- runtime drilldown analytics calculates:
-   days_in_stock = TODAY - record_date = 95 days
-   max_storage_days = 90 days (from product_settings)
-   
-   CASE
-       WHEN 95 > 90 THEN 'AGED'
-       WHEN 95 > (90 * 0.8=72) THEN 'AGING_SOON'
-   END = 'AGED'
-   ```
-
-2. **Action Recommendation**
-   ```sql
-   recommended_action = 'LIQUIDATE_AGED_STOCK'
-   ```
-
-3. **Risk Flag**
-   ```sql
-   risk_flags = ARRAY['AGED_INVENTORY']
-   ```
-
-4. **Alert Priority**
-   ```sql
-    -- runtime alert builder assigns Priority 2
-    alert_type = '🟠 URGENT - Over-Aged Position'
-    alert_message = 'Position age: 95 days (Cycle cap: 90 days)'
-   ```
-
-5. **Alert Display**
-   ```
-   Orange alert card in Critical Alerts panel
-   Shows: Product, Location, Age vs Max, Recommendation
-   ```
-
-6. **Narrative Impact**
-   ```json
-   {
-     "aged_count": 1,
-     "recommended_actions": [
-    "Accelerate realization on 1 over-aged shipment(s)"
-     ]
-   }
-   ```
-
----
-
-## 🔌 API Reference
-
-### Inventory Endpoints
-
-**GET /api/inventory**
-- Returns all inventory records
-- Response: `{success: bool, data: [], total: int}`
-
-**GET /api/inventory/summary**
-- Returns aggregate statistics
-- Response: `{success: bool, summary: {}}`
-
-### Intelligence Endpoints
-
-**GET /api/stock-analytics/dates**
-- Returns available as-of dates for analytics
-- Response: `{success: bool, data: ["YYYY-MM-DD", ...]}`
-
-**GET /api/stock-analytics/summary**
-- Grouped trading summary (Product + Port + Company)
-- Response: `{success: bool, data: [{group_key, physical_stock, ...}]}`
-
-**GET /api/stock-analytics/drilldown**
-- Vessel-level drilldown for one grouped key
-- Response: `{success: bool, data: [{vessel_name, vessel_date, physical_stock, ...}]}`
-
-**GET /api/intelligence/alerts**
-- Prioritized trading-risk alerts
-- Response: `{success: bool, data: [{priority, alert_type, item, message}]}`
-
-**GET /api/intelligence/narrative**
-- Natural language trading-operations summary
-- Response: 
-```json
-{
-  "success": true,
-  "data": {
-    "overall_health": "CRITICAL",
-    "executive_summary": "...",
-    "critical_count": 2,
-    "recommended_actions": ["...", "..."]
-  }
-}
+**State Management**:
+```typescript
+const [targets, setTargets] = useState([]);
+const [editedTargets, setEditedTargets] = useState(new Map());
+const [showHistory, setShowHistory] = useState(false);
+const [history, setHistory] = useState([]);
+const [saveStatus, setSaveStatus] = useState<'idle'|'saving'|'success'|'error'>('idle');
 ```
 
-### File Management Endpoints
+#### **DataTable.tsx**
+Displays inventory/market data in tabular format
 
-**POST /api/upload**
-- Upload Excel file to GCS
-- Request: `FormData with file`
-- Response: `{success: bool, gcs_path, filename}`
+**Features**:
+- Column customization
+- Sorting and filtering
+- Pagination
+- Export functionality
 
-**POST /api/refresh**
-- Process new files from GCS
-- Response: `{success: bool, imported: [{gcs_path, rows}]}`
+#### **App.tsx** (Main Component - 250+ lines)
+Core application layout and orchestration
 
-**GET /api/files**
-- List all uploaded files and processing status
-- Response: `{success: bool, files: [{filename, processed, rows_imported, processed_at}]}`
+**Key State**:
+- inventory, summary, alerts, narrative
+- selectedProduct for drilldowns
+- uploadPanelOpen for modal control
+- asOfDate, backdate for temporal queries
+- searchQuery for filtering
 
-### Settings Endpoints
+**Main Sections**:
+1. Header with date pickers and search
+2. KPI metrics summary
+3. Inventory data table
+4. Product details panel
+5. Analytics insights
 
-**GET /api/product-settings**
-- Get all product settings
-- Response: `{success: bool, data: [{item, safety_stock, reorder_point, ...}]}`
+### **Styling**
 
-**POST /api/product-settings**
-- Create new product setting
-- Request: `{item, safety_stock, reorder_point, ...}`
-- Response: `{success: bool, data: {id, item, ...}}`
+- **Framework**: Tailwind CSS 3.3.6
+- **Layout**: Flexbox/Grid utilities
+- **Colors**: Custom color scheme (see `styles/colors.ts`)
+- **Animations**: CSS animations (`styles/animations.css`)
+- **Icons**: Lucide React (Activity, Upload, Settings, etc.)
+- **Responsive**: Mobile-first responsive design
 
-**PUT /api/product-settings/{id}**
-- Update product setting
-- Request: `{field: value}`
-- Response: `{success: bool, data: {id, item, ...}}`
+### **API Integration**
 
-**DELETE /api/product-settings/{id}**
-- Soft delete product setting
-- Response: `{success: bool, message}`
+```typescript
+const API_BASE_URL = 'http://localhost:8000';
+
+// Axios instance for requests
+const axiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { 'Content-Type': 'application/json' }
+});
+
+// Example: Fetch targets
+const response = await axiosInstance.get('/api/targets');
+const targets = response.data;
+
+// Example: Update target
+await axiosInstance.put(`/api/targets/${commodityId}`, {
+  desired_stock_level: 1000,
+  monthly_sales_target: 500
+});
+```
 
 ---
 
-## 🚀 Deployment & Setup
+## ⚙️ Setup & Installation
 
-### Prerequisites
-- Python 3.9+
-- Node.js 16+
-- PostgreSQL (or Cloud SQL)
-- Google Cloud Storage bucket
-- Google Application Default Credentials
+### **Prerequisites**
+- Python 3.11+
+- Node.js 18+ (for frontend)
+- PostgreSQL 14+ (production) OR SQLite (development)
+- Git
 
-### Backend Setup
+### **Backend Setup**
 
-1. **Install Dependencies**
+1. **Clone repository**
    ```bash
-   cd backend
-   pip install -r requirements.txt
+   git clone https://github.com/amitgupta1000/dashboard-inventory.git
+   cd dashboard-inventory
    ```
 
-2. **Setup Environment**
+2. **Create Python environment**
    ```bash
-   cp backend/.env.example backend/.env
-   # Configure GCS_BUCKET_NAME
+   python -m venv venv
+   source venv/Scripts/activate  # On Windows
    ```
 
-3. **Create Database Schema**
+3. **Install dependencies**
    ```bash
-   # Run these SQL scripts in order:
-   # 1. schema_product_settings.sql
-   # 2. schema_inventory_dashboard.sql
-    # 3. schema_stock_analytics_bootstrap.sql
+   pip install -r backend/requirements.txt
    ```
 
-4. **Start Backend Server**
+4. **Configure environment**
    ```bash
-   python main.py
-   # Server runs on http://localhost:8000
-   # API docs available at http://localhost:8000/docs
+   # Create .env in backend/ directory
+   cat > backend/.env << EOF
+   USE_SQLITE=true
+   # OR for PostgreSQL:
+   CLOUD_SQL_PASSWORD=your_password
+   CLOUD_SQL_HOST=your_host
+   CLOUD_SQL_DATABASE=inventory
+   EOF
    ```
 
-### Frontend Setup
+5. **Initialize database**
+   ```bash
+   python backend/init_db.py
+   ```
 
-1. **Install Dependencies**
+### **Frontend Setup**
+
+1. **Navigate to frontend**
    ```bash
    cd frontend
-   npm install --legacy-peer-deps
    ```
 
-2. **Start Dev Server**
+2. **Install dependencies**
    ```bash
-   npm run dev
-   # Frontend runs on http://localhost:3000
+   npm install
    ```
 
-3. **Build for Production**
+3. **Configure API endpoint**
    ```bash
-   npm run build
-   # Outputs to frontend/dist/
+   # Check App.tsx for API_BASE_URL
+   # Default: http://localhost:8000
    ```
 
-### Data Import Workflow
+---
 
-1. **Prepare Excel File**
-   - Create/update `stock_report.xlsx`
-   - Ensure data is in worksheet named "STOCK SHEET"
-   - Include all required columns with data
+## 🚀 Running the Application
 
-2. **Upload to GCS**
-   - Option A: Use Dashboard UI - "Upload File" button
-   - Option B: Manual upload to `gs://dashboard-inventory/uploads/`
+### **Backend**
+```bash
+cd c:\dashboard-inventory
+python main.py
+# Server runs on: http://localhost:8000
+# API docs on: http://localhost:8000/docs
+```
 
-3. **Trigger Processing**
-   - Frontend: Click "Refresh Data" button
-   - Or API: `POST /api/refresh`
-   - Backend automatically:
-     - Detects new files
-     - Parses Excel
-     - Validates data
-     - Inserts into database
-     - Calculates analytics
+### **Frontend**
+```bash
+cd frontend
+npm run dev
+# App runs on: http://localhost:5173
+# Vite dev server with hot reload
+```
 
-4. **View Results**
-   - Navigate to "Intelligence & Insights" tab
-   - See automatic alerts and recommendations
-   - Use product intelligence table for detailed view
-   - Click product names for specific analysis
+### **Full Stack**
+```bash
+# Terminal 1: Backend
+python main.py
+
+# Terminal 2: Frontend
+cd frontend
+npm run dev
+
+# Terminal 3: Load data (optional)
+python -c "from backend.load_commodities import load_commodities_from_csv; \
+           load_commodities_from_csv()"
+
+python -c "import asyncio; \
+           from backend.load_inventory_targets import load_inventory_targets_from_csv; \
+           asyncio.run(load_inventory_targets_from_csv())"
+```
+
+### **Data Loading Workflow**
+
+```bash
+# 1. Load commodity master data
+python -c "from backend.load_commodities import load_commodities_from_csv; \
+           load_commodities_from_csv('data_files/inventory_targets.csv')"
+
+# 2. Load inventory targets
+python -c "import asyncio; \
+           from backend.load_inventory_targets import load_inventory_targets_from_csv; \
+           asyncio.run(load_inventory_targets_from_csv('data_files/inventory_targets.csv'))"
+
+# 3. Load market data
+python -c "import asyncio; \
+           from backend.load_market_data import load_market_data_from_excel; \
+           asyncio.run(load_market_data_from_excel('data_files/DAILY PRICE REPORT 22-05-2026.xlsx', '2026-05-22'))"
+
+# 4. Load stock report
+python backend/load_stock_report.py
+```
 
 ---
 
-## 🎯 Key Features Summary
+## 📝 Key Implementation Details
 
-| Feature | Source | Processing | Display |
-|---------|--------|-----------|---------|
-| **Stock Status** | Stock report CSV + targets | Runtime analytics in main.py | Status badge with color |
-| **Days of Stock** | Settings + Inventory | Calculation: stock/(target/30) | Numeric with color coding |
-| **Critical Alerts** | Runtime analytics output | Priority ranking | Alert cards with emoji |
-| **Aged Inventory** | Vessel dates + report date | Age calculation in runtime | Aging status indicator |
-| **Natural Language** | Runtime analytics output | Narrative generation in backend | Executive summary card |
-| **Profit Margin** | Excel pricing data | Calculation: (sell-buy)/buy*100 | Percentage with color |
-| **Gap Analysis** | Inventory + Settings | Shortage/excess calculation | Numeric with +/- indicator |
+### **Async/Await Pattern**
+- All database operations use `async` functions with SQLAlchemy's async engine
+- FastAPI routes are async for better concurrency
+- Example:
+  ```python
+  async def load_inventory_targets_from_csv(file_path: str):
+      async with async_session() as session:
+          await session.execute(...)
+          await session.commit()
+  ```
 
----
+### **Data Versioning (config_date)**
+- Instead of explicit version numbers, uses `config_date`
+- Multiple rows with same `commodity_id` but different dates = versions
+- Example:
+  ```
+  commodity_id | config_date | desired_stock_level
+  1           | 2026-05-20  | 1000
+  1           | 2026-05-22  | 1200 (newer version)
+  1           | 2026-05-25  | 1500 (current)
+  ```
 
-## 📝 Notes
+### **Commodity Matching Strategy**
+1. Exact case-insensitive match (avoids "TOLUENE" vs "TOLUENE TDI" collisions)
+2. Fuzzy matching fallback (70%+ similarity)
+3. Normalization: uppercase + trim + collapse spaces
 
-- All timestamps are stored in UTC (TIMESTAMPTZ)
-- Numeric fields use DECIMAL for precision (financial calculations)
-- File deduplication prevents re-importing same data
-- Alerts and narrative are generated from runtime analytics (no SQL view dependency)
-- Natural language summaries update in real-time
-- All data is immutable (updates create new records)
-- Soft deletes preserve audit trail
-
----
-
-## 🆘 Troubleshooting
-
-**Issue**: Data not appearing in dashboard
-- Check: File uploaded to correct GCS bucket
-- Check: Excel file has "STOCK SHEET" worksheet
-- Check: Run `/api/refresh` endpoint
-- Check: Backend logs for parsing errors
-
-**Issue**: Alerts not showing up
-- Check: Product settings configured with correct thresholds
-- Check: Product name matches exactly in settings and inventory
-- Check: `inventory_detail` has data for selected as_of date
-- Check: target records exist in `commodity_daily_configs`
-
-**Issue**: Negative days of stock
-- Check: Monthly target volume is positive
-- Check: Stock quantity is positive
-- Check: vessel date and report date are valid in source data
-
-**Issue**: Frontend not connecting to backend
-- Check: Backend running on localhost:8000
-- Check: CORS enabled in FastAPI
-- Check: API endpoint URLs match
+### **Percentage Handling**
+- CSV values like "12%" converted to decimal 0.12
+- Stored as FLOAT in database
+- API returns decimal values
 
 ---
 
-## 📚 Documentation Files
+## 📚 File Structure
 
-- `INTELLIGENCE_FEATURES.md` - Detailed intelligence system documentation
-- `schema_product_settings.sql` - Product configuration schema
-- `schema_inventory_dashboard.sql` - Main inventory schema  
-- `schema_stock_analytics_bootstrap.sql` - Current stock analytics schema
+```
+dashboard-inventory/
+├── backend/
+│   ├── __init__.py
+│   ├── database.py              # ORM models, engine config
+│   ├── gcs.py                   # Google Cloud Storage integration
+│   ├── load_commodities.py      # Load commodity master data
+│   ├── load_inventory_targets.py # Load target configurations
+│   ├── load_market_data.py      # Load market pricing
+│   ├── load_stock_report.py     # Load stock reports (WIP)
+│   ├── migrate_add_target_fields.py # Database migrations
+│   ├── routes/
+│   │   ├── targets.py           # Targets API (CRUD + history)
+│   │   ├── market_data.py       # Market data API
+│   │   ├── inventory.py         # Inventory queries
+│   │   └── uploads.py           # File upload handling
+│   ├── requirements.txt
+│   └── .env                     # Environment config
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx              # Main component
+│   │   ├── components/
+│   │   │   ├── UploadPanel.tsx  # Upload modal (330 lines)
+│   │   │   ├── TargetEditor.tsx # Targets editor (380 lines)
+│   │   │   ├── DataTable.tsx    # Data display
+│   │   │   └── ...
+│   │   ├── styles/
+│   │   │   ├── animations.css
+│   │   │   ├── colors.ts
+│   │   │   └── ...
+│   │   └── main.tsx
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── tailwind.config.js
+│   └── ...
+├── data_files/
+│   ├── inventory_targets.csv
+│   ├── DAILY PRICE REPORT 22-05-2026.xlsx
+│   ├── stock_report.xlsx
+│   └── ...
+├── readmes/
+│   ├── README.md (old)
+│   ├── README_UPDATED.md (this file)
+│   ├── TARGETS_CSV_MAPPING.md
+│   └── ...
+├── main.py                      # FastAPI application entry point
+└── jobs.db                      # SQLite database (development)
+```
 
 ---
 
-**Last Updated**: May 19, 2026  
-**Version**: 1.0  
-**Status**: Production Ready
+## 🔍 Current Status (May 27, 2026)
+
+### ✅ Completed
+- ✅ Backend API with 4 routers (targets, market_data, inventory, uploads)
+- ✅ Frontend React UI with TypeScript and Vite
+- ✅ Database schema with 8 tables
+- ✅ Data loaders for commodities, targets, market data
+- ✅ Async/await patterns throughout
+- ✅ Pydantic validation models
+- ✅ Modal-based UI (UploadPanel, TargetEditor)
+- ✅ CSV/Excel parsing with pandas
+- ✅ Auto-versioning via config_date
+- ✅ 34 commodities loaded
+- ✅ 34 commodity targets loaded
+- ✅ 60 market data records loaded
+
+### 🟡 In Progress
+- 🟡 Stock report loader (load_stock_report.py)
+- 🟡 Advanced analytics and insights
+- 🟡 Performance optimization for large datasets
+
+### 🔮 Future Enhancements
+- 📋 Automated alerts for stock levels
+- 📊 Advanced forecasting and predictions
+- 🔔 Real-time notifications
+- 📧 Email alerts for critical stock events
+- 📱 Mobile app
+- 🔐 User authentication and role-based access
+
+---
+
+## 💬 Support & Documentation
+
+**API Documentation**: Visit `http://localhost:8000/docs` for interactive Swagger UI
+
+**Schema Reference**: See [TARGETS_CSV_MAPPING.md](TARGETS_CSV_MAPPING.md) for detailed column mappings
+
+**Development**: Ensure Python 3.11+ and Node 18+ are installed
+
+---
+
+**Last Updated**: May 27, 2026
+**Maintained By**: Dashboard Inventory Team
