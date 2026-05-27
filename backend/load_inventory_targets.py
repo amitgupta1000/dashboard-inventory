@@ -28,7 +28,7 @@ import asyncio
 from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select, create_engine
+from sqlalchemy import select, create_engine, inspect, text
 from backend.database import Commodity, CommodityDailyConfig, Base, DATABASE_URL, SYNC_DATABASE_URL
 from difflib import SequenceMatcher
 
@@ -111,6 +111,32 @@ def _to_float(value):
     return None
 
 
+def ensure_target_columns(sync_engine):
+    """Add missing target columns for older SQLite/Postgres schemas before seeding."""
+    inspector = inspect(sync_engine)
+    existing_columns = {
+        col["name"]
+        for col in inspector.get_columns("commodity_daily_configs")
+    }
+
+    ddl_statements = []
+    if "monthly_sales_target" not in existing_columns:
+        ddl_statements.append(
+            "ALTER TABLE commodity_daily_configs ADD COLUMN monthly_sales_target FLOAT NULL"
+        )
+    if "target_storage_cap_days" not in existing_columns:
+        ddl_statements.append(
+            "ALTER TABLE commodity_daily_configs ADD COLUMN target_storage_cap_days FLOAT NULL"
+        )
+
+    if not ddl_statements:
+        return
+
+    with sync_engine.begin() as conn:
+        for ddl in ddl_statements:
+            conn.execute(text(ddl))
+
+
 async def load_inventory_targets_from_csv(file_path: str, config_date: date = None):
     """
     Load inventory targets from CSV into CommodityDailyConfig.
@@ -142,6 +168,10 @@ async def load_inventory_targets_from_csv(file_path: str, config_date: date = No
     # Setup database connection (using sync session for commodity lookup)
     engine = create_async_engine(DATABASE_URL, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    sync_engine = create_engine(SYNC_DATABASE_URL)
+
+    # Ensure legacy DBs have the newer target fields used by the ORM model.
+    ensure_target_columns(sync_engine)
     
     loaded_count = 0
     failed_count = 0
@@ -162,7 +192,6 @@ async def load_inventory_targets_from_csv(file_path: str, config_date: date = No
                 
                 # Create a sync context just for commodity lookup
                 # Note: This is a workaround since we need to query Commodity synchronously
-                sync_engine = create_engine(SYNC_DATABASE_URL)
                 from sqlalchemy.orm import Session as SyncSession
                 sync_session = SyncSession(sync_engine)
                 

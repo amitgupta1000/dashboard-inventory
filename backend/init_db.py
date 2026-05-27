@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from database import Base, get_engine, InventoryDetail
+try:
+    from backend.database import init_db_schema, get_engine
+except ImportError:
+    from database import init_db_schema, get_engine
 
 load_dotenv()
 
@@ -20,17 +23,12 @@ def init_db():
     print(f"Database URL: {os.environ.get('CLOUD_SQL_DATABASE', 'inventory')}")
     
     try:
-        # Create all tables defined in Base
-        Base.metadata.create_all(engine)
-        
-        # Verify tables were created
+        tables = init_db_schema()
         inspector = __import__('sqlalchemy').inspect(engine)
-        tables = inspector.get_table_names()
         
         print(f"\n✓ Database initialization successful!")
         print(f"✓ Created tables: {', '.join(tables)}")
         
-        # Verify InventoryDetail columns
         if 'inventory_detail' in tables:
             columns = [col['name'] for col in inspector.get_columns('inventory_detail')]
             print(f"\n✓ inventory_detail columns: {len(columns)} fields")

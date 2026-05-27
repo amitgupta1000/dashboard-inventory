@@ -5,8 +5,7 @@ from datetime import date
 from typing import Optional, List
 from pydantic import BaseModel
 
-from backend.database import get_db
-from backend.market_data_schema import MarketDataHVB
+from backend.database import get_db, MarketDataHVB
 
 router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 
@@ -23,6 +22,10 @@ class MarketDataResponse(BaseModel):
     selling_p: Optional[float]
     replac_dollar: Optional[float]
     replace: Optional[float]
+    incoming_period_1: Optional[float]
+    incoming_period_2: Optional[float]
+    current_month: Optional[float]
+    next_month: Optional[float]
     physical_stock: Optional[float]
     port_stock: Optional[float]
     ready: Optional[float]
@@ -103,6 +106,10 @@ async def get_market_data(
                 selling_p=md.selling_p,
                 replac_dollar=md.replac_dollar,
                 replace=md.replace,
+                incoming_period_1=md.incoming_period_1,
+                incoming_period_2=md.incoming_period_2,
+                current_month=md.current_month,
+                next_month=md.next_month,
                 physical_stock=md.physical_stock,
                 port_stock=md.port_stock,
                 ready=md.ready,
@@ -215,6 +222,10 @@ async def get_market_data_by_product(
                 selling_p=md.selling_p,
                 replac_dollar=md.replac_dollar,
                 replace=md.replace,
+                incoming_period_1=md.incoming_period_1,
+                incoming_period_2=md.incoming_period_2,
+                current_month=md.current_month,
+                next_month=md.next_month,
                 physical_stock=md.physical_stock,
                 port_stock=md.port_stock,
                 ready=md.ready,

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Edit2, Save, History, AlertCircle, CheckCircle, Loader } from 'lucide-react';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '';
 
 interface Target {
   id: number;
@@ -28,9 +28,21 @@ interface TargetEditorProps {
   onSaveSuccess?: () => void;
 }
 
+interface SeedTargetsResponse {
+  success: boolean;
+  message: string;
+  file_path: string;
+  config_date: string;
+  commodities_created: number;
+  commodities_skipped: number;
+  target_rows_loaded: number;
+  target_rows_failed: number;
+}
+
 const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSuccess }) => {
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [saveStatus, setSaveStatus] = useState<{
     type: 'idle' | 'saving' | 'success' | 'error';
     message: string;
@@ -59,6 +71,37 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSeedFromCsv = async () => {
+    setSeeding(true);
+    setSaveStatus({ type: 'saving', message: 'Seeding targets from local CSV...' });
+
+    try {
+      const response = await axios.post<SeedTargetsResponse>(
+        `${API_BASE_URL}/api/targets/seed-from-csv`,
+        {
+          file_path: 'data_files/inventory_targets.csv',
+          allow_reseed: false
+        }
+      );
+
+      const seedResult = response.data;
+      setSaveStatus({
+        type: 'success',
+        message: `Seeded ${seedResult.target_rows_loaded} rows (failed: ${seedResult.target_rows_failed})`
+      });
+
+      await fetchTargets();
+      onSaveSuccess?.();
+    } catch (error: any) {
+      setSaveStatus({
+        type: 'error',
+        message: error.response?.data?.detail || 'Failed to seed targets from CSV'
+      });
+    } finally {
+      setSeeding(false);
     }
   };
 
@@ -269,6 +312,24 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
             {loading ? (
               <div className="flex justify-center py-8">
                 <Loader className="w-6 h-6 text-blue-600 animate-spin" />
+              </div>
+            ) : targets.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+                <h3 className="text-lg font-semibold text-slate-800">No targets found in database</h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Seed one-time targets from data_files/inventory_targets.csv to bootstrap the live environment.
+                </p>
+                <button
+                  onClick={handleSeedFromCsv}
+                  disabled={seeding}
+                  className={`mt-4 rounded-lg px-4 py-2 font-semibold transition-colors ${
+                    seeding
+                      ? 'bg-slate-300 text-slate-600 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {seeding ? 'Seeding...' : 'Seed Targets From CSV'}
+                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -519,9 +580,9 @@ const TargetEditor: React.FC<TargetEditorProps> = ({ isOpen, onClose, onSaveSucc
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={!hasChanges || saveStatus.type === 'saving'}
+                  disabled={!hasChanges || saveStatus.type === 'saving' || seeding}
                   className={`px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-colors ${
-                    hasChanges && saveStatus.type !== 'saving'
+                    hasChanges && saveStatus.type !== 'saving' && !seeding
                       ? 'bg-green-600 text-white hover:bg-green-700'
                       : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}

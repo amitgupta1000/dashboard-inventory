@@ -6,10 +6,14 @@ Files are stored in Google Cloud Storage with folder structure and datetime stam
 from fastapi import APIRouter, File, UploadFile, HTTPException, status
 from pydantic import BaseModel
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 import logging
+import os
+import tempfile
 
 from backend import gcs
+from backend.load_stock_report import load_stock_report
+from backend.load_market_data import load_market_data_from_excel
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 logger = logging.getLogger(__name__)
@@ -26,6 +30,7 @@ class FileUploadResponse(BaseModel):
     upload_type: str
     uploaded_at: datetime
     message: str
+    ingestion: Optional[dict] = None
 
 class FileListResponse(BaseModel):
     """List of uploaded files by type"""
@@ -39,6 +44,98 @@ class UploadSummary(BaseModel):
     prices_files: int
     sales_register_files: int
     total_files: int
+
+
+def _infer_report_date_from_filename(file_name: str):
+    """Try to infer DD-MM-YYYY date in filename for market data reports."""
+    import re
+    from datetime import datetime as dt
+
+    if not file_name:
+        return None
+
+    match = re.search(r"(\d{1,2})-(\d{1,2})-(\d{4})", file_name)
+    if not match:
+        return None
+
+    day, month, year = match.groups()
+    try:
+        return dt(int(year), int(month), int(day)).date()
+    except ValueError:
+        return None
+
+
+def _process_uploaded_file(upload_type: str, gcs_path: str, original_filename: str) -> dict:
+    """Unified workflow: download from GCS, parse, and upsert into destination table."""
+    file_bytes = gcs.download_file(gcs_path)
+    _, ext = os.path.splitext(original_filename or "")
+    suffix = ext if ext else ".bin"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
+    try:
+        try:
+            if upload_type == "inventory":
+                if suffix.lower() not in {".csv"}:
+                    return {
+                        "processed": False,
+                        "destination_table": "inventory_detail",
+                        "result": {
+                            "message": "Inventory parser currently supports CSV stock report format only",
+                        },
+                    }
+
+                result = load_stock_report(tmp_path)
+                return {
+                    "processed": True,
+                    "destination_table": "inventory_detail",
+                    "result": result,
+                }
+
+            if upload_type == "prices":
+                if suffix.lower() not in {".xlsx", ".xls"}:
+                    return {
+                        "processed": False,
+                        "destination_table": "market_data_hvb",
+                        "result": {
+                            "message": "Market price parser currently supports Excel (.xlsx/.xls) format only",
+                        },
+                    }
+
+                report_date = _infer_report_date_from_filename(original_filename)
+                row_count = load_market_data_from_excel(tmp_path, report_date)
+                return {
+                    "processed": True,
+                    "destination_table": "market_data_hvb",
+                    "result": {
+                        "loaded": row_count,
+                        "report_date": str(report_date) if report_date else None,
+                    },
+                }
+
+            # Sales-register parser/upsert is not implemented yet.
+            return {
+                "processed": False,
+                "destination_table": None,
+                "result": {
+                    "message": "Upload stored in GCS; parser/upsert for sales-register is not implemented yet",
+                },
+            }
+        except Exception as exc:
+            return {
+                "processed": False,
+                "destination_table": None,
+                "result": {
+                    "message": f"Ingestion failed: {exc}",
+                },
+            }
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 # ============================================================================
 # INVENTORY UPLOADS
@@ -82,13 +179,16 @@ async def upload_inventory(file: UploadFile = File(...)):
         
         logger.info(f"Inventory file uploaded: {gcs_path}")
         
+        ingestion_result = _process_uploaded_file("inventory", gcs_path, file.filename)
+
         return FileUploadResponse(
             success=True,
             gcs_path=gcs_path,
             filename=file.filename,
             upload_type="inventory",
             uploaded_at=datetime.utcnow(),
-            message=f"Inventory file '{file.filename}' uploaded successfully"
+            message=f"Inventory file '{file.filename}' uploaded and processed successfully",
+            ingestion=ingestion_result,
         )
     
     except HTTPException:
@@ -161,13 +261,16 @@ async def upload_prices(file: UploadFile = File(...)):
         
         logger.info(f"Prices file uploaded: {gcs_path}")
         
+        ingestion_result = _process_uploaded_file("prices", gcs_path, file.filename)
+
         return FileUploadResponse(
             success=True,
             gcs_path=gcs_path,
             filename=file.filename,
             upload_type="prices",
             uploaded_at=datetime.utcnow(),
-            message=f"Market prices file '{file.filename}' uploaded successfully"
+            message=f"Market prices file '{file.filename}' uploaded and processed successfully",
+            ingestion=ingestion_result,
         )
     
     except HTTPException:
@@ -240,13 +343,16 @@ async def upload_sales_register(file: UploadFile = File(...)):
         
         logger.info(f"Sales register file uploaded: {gcs_path}")
         
+        ingestion_result = _process_uploaded_file("sales_register", gcs_path, file.filename)
+
         return FileUploadResponse(
             success=True,
             gcs_path=gcs_path,
             filename=file.filename,
             upload_type="sales_register",
             uploaded_at=datetime.utcnow(),
-            message=f"Sales register file '{file.filename}' uploaded successfully"
+            message=f"Sales register file '{file.filename}' uploaded successfully",
+            ingestion=ingestion_result,
         )
     
     except HTTPException:

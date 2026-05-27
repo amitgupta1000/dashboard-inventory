@@ -5,9 +5,7 @@ import pandas as pd
 import openpyxl
 from datetime import datetime
 from pathlib import Path
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-import os
 import sys
 
 # Add parent directory to path for imports
@@ -15,8 +13,7 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from backend.database import get_engine
-from backend.market_data_schema import MarketDataHVB, Base
+from backend.database import get_engine, MarketDataHVB
 
 
 def extract_product_info(product_str: str) -> tuple[str, str]:
@@ -27,18 +24,14 @@ def extract_product_info(product_str: str) -> tuple[str, str]:
     if not product_str or not isinstance(product_str, str):
         return ('', '')
     
-    # Split on '-' and strip whitespace
-    parts = [p.strip() for p in product_str.split('-')]
-    
-    if len(parts) >= 2:
-        product_name = parts[0].strip()
-        port = parts[1].strip()
-    elif len(parts) == 1:
-        product_name = parts[0].strip()
-        port = ''
-    else:
-        product_name = ''
-        port = ''
+    # Split once on '-' and strip both parts to remove trailing/leading whitespace.
+    cleaned = str(product_str).strip()
+    if '-' not in cleaned:
+        return (cleaned, '')
+
+    product_name, port = cleaned.split('-', 1)
+    product_name = product_name.strip()
+    port = port.strip()
     
     return (product_name, port)
 
@@ -71,14 +64,14 @@ def load_market_data_from_excel(file_path: str, report_date: datetime.date = Non
     # Remove the last row (TOTAL)
     df = df.iloc[:-1]
     
-    # Standardize column names (lowercase, replace spaces and special chars)
+    # Standardize expected column order and apply domain aliases.
     df.columns = [
         'product',               # 0
         'company',               # 1
         'monthly_volumes',       # 2
         'ready',                 # 3
-        'second_half_may',       # 4
-        'june_1st_half',         # 5
+        'incoming_period_1',     # 4 (alias of SECOND HALF MAY)
+        'incoming_period_2',     # 5 (alias of JUNE 1ST HALF)
         'physical_stock',        # 6 (note: PHYSCIAL in original has typo)
         'pending_lifting',       # 7
         'port_stock',            # 8
@@ -87,8 +80,8 @@ def load_market_data_from_excel(file_path: str, report_date: datetime.date = Non
         'index',                 # 11
         'market_price',          # 12
         'selling_p',             # 13
-        'may',                   # 14
-        'june',                  # 15
+        'current_month',         # 14 (alias of MAY)
+        'next_month',            # 15 (alias of JUNE)
         'arrival_date',          # 16
         'unnamed_17',            # 17 (ignore)
         'unnamed_18',            # 18 (ignore)
@@ -113,7 +106,7 @@ def load_market_data_from_excel(file_path: str, report_date: datetime.date = Non
     engine = get_engine()
     
     # Create table if it doesn't exist
-    Base.metadata.create_all(engine)
+    MarketDataHVB.__table__.create(engine, checkfirst=True)
     
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -128,8 +121,8 @@ def load_market_data_from_excel(file_path: str, report_date: datetime.date = Non
                 company=row['company'],
                 monthly_volumes=_to_float(row['monthly_volumes']),
                 ready=_to_float(row['ready']),
-                second_half_may=_to_float(row['second_half_may']),
-                june_1st_half=_to_float(row['june_1st_half']),
+                incoming_period_1=_to_float(row['incoming_period_1']),
+                incoming_period_2=_to_float(row['incoming_period_2']),
                 physical_stock=_to_float(row['physical_stock']),
                 pending_lifting=_to_float(row['pending_lifting']),
                 port_stock=_to_float(row['port_stock']),
@@ -138,8 +131,8 @@ def load_market_data_from_excel(file_path: str, report_date: datetime.date = Non
                 index=_to_float(row['index']),
                 market_price=_to_float(row['market_price']),
                 selling_p=_to_float(row['selling_p']),
-                may=_to_float(row['may']),
-                june=_to_float(row['june']),
+                current_month=_to_float(row['current_month']),
+                next_month=_to_float(row['next_month']),
                 arrival_date=row['arrival_date'],
                 product_name=row['product_name'],
                 port=row['port'],

@@ -29,7 +29,7 @@ if str(repo_root) not in sys.path:
 
 os.environ.setdefault("USE_SQLITE", "true")
 
-from backend.database import Base, InventoryDetail, get_engine
+from backend.database import Base, Commodity, InventoryDetail, get_engine
 
 
 BASE_COLUMNS = [
@@ -64,6 +64,23 @@ def normalize_column_name(name: str) -> str:
     cleaned = str(name).strip().lower().replace("\n", " ")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned)
     return cleaned.strip("_")
+
+
+def normalize_product_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return " ".join(str(name).upper().strip().split())
+
+
+def build_commodity_name_map(session) -> dict[str, str]:
+    """Return normalized commodity name -> canonical commodity_name from DB."""
+    result = session.execute(select(Commodity).where(Commodity.is_active == True))
+    commodities = result.scalars().all()
+    return {
+        normalize_product_name(c.commodity_name): c.commodity_name
+        for c in commodities
+        if c.commodity_name
+    }
 
 
 def parse_report_date(title_line: str) -> date:
@@ -155,14 +172,23 @@ def ensure_inventory_detail_columns(engine) -> None:
             connection.execute(text(ddl))
 
 
-def upsert_stock_row(session, report_date: date, row: pd.Series, source_file_name: str) -> str:
+def upsert_stock_row(
+    session,
+    report_date: date,
+    row: pd.Series,
+    source_file_name: str,
+    commodity_name_map: dict[str, str],
+) -> str:
     vessel_date = to_date(row["vessel_date"])
     inventory_days = (report_date - vessel_date).days if vessel_date else None
+    product_name_raw = row["product_name"]
+    normalized_name = normalize_product_name(product_name_raw)
+    canonical_product_name = commodity_name_map.get(normalized_name, product_name_raw)
 
     key_query = select(InventoryDetail).where(
         InventoryDetail.date == report_date,
         InventoryDetail.vessel_name == row["vessel_name"],
-        InventoryDetail.product_name == row["product_name"],
+        InventoryDetail.product_name == canonical_product_name,
         InventoryDetail.port_name == row["port_name"],
         InventoryDetail.company_terminal_name == row["company_terminal_name"],
         InventoryDetail.company_name == row["company_name"],
@@ -173,7 +199,7 @@ def upsert_stock_row(session, report_date: date, row: pd.Series, source_file_nam
         "date": report_date,
         "vessel_date": vessel_date,
         "vessel_name": row["vessel_name"] or None,
-        "product_name": row["product_name"] or None,
+        "product_name": canonical_product_name or None,
         "port_name": row["port_name"] or None,
         "company_terminal_name": row["company_terminal_name"] or None,
         "company_name": row["company_name"] or None,
@@ -211,9 +237,17 @@ def load_stock_report(path: str) -> dict:
     failed = 0
 
     try:
+        commodity_name_map = build_commodity_name_map(session)
+
         for _, row in df.iterrows():
             try:
-                action = upsert_stock_row(session, report_date, row, Path(path).name)
+                action = upsert_stock_row(
+                    session,
+                    report_date,
+                    row,
+                    Path(path).name,
+                    commodity_name_map,
+                )
                 if action == "inserted":
                     inserted += 1
                 else:

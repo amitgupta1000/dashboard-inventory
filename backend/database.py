@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_engine,
+    inspect,
 )
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship
@@ -99,6 +100,13 @@ def get_engine():
     if not USE_SQLITE:
         connect_args = {"sslmode": "require"}
     return create_engine(SYNC_DATABASE_URL, future=True, connect_args=connect_args)
+
+
+def init_db_schema() -> list[str]:
+    """Create all ORM tables and return discovered table names."""
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    return inspect(engine).get_table_names()
 
 
 logger.info("Database initialized")
@@ -300,3 +308,35 @@ class InventoryDetail(Base):
         UniqueConstraint("date", "vessel_name", "product_name", "company_terminal_name", "company_name", "port_name", 
                         name="uq_inventory_detail_record"),
     )
+
+
+class MarketDataHVB(Base):
+    """Market data from daily price reports."""
+    __tablename__ = "market_data_hvb"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_date = Column(Date, index=True, nullable=False)
+
+    product = Column(String(255), index=True, nullable=False)
+    company = Column(String(255), nullable=True)
+    monthly_volumes = Column(Float, nullable=True)
+    ready = Column(Float, nullable=True)
+    incoming_period_1 = Column(Float, nullable=True)
+    incoming_period_2 = Column(Float, nullable=True)
+    physical_stock = Column(Float, nullable=True)
+    pending_lifting = Column(Float, nullable=True)
+    port_stock = Column(Float, nullable=True)
+    replac_dollar = Column(Float, nullable=True)
+    replace = Column(Float, nullable=True)
+    index = Column(Float, nullable=True)
+    market_price = Column(Float, nullable=True)
+    selling_p = Column(Float, nullable=True)
+    current_month = Column(Float, nullable=True)
+    next_month = Column(Float, nullable=True)
+    arrival_date = Column(String(100), nullable=True)
+
+    product_name = Column(String(255), index=True, nullable=False)
+    port = Column(String(100), index=True, nullable=False)
+    usdinr_rate = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)

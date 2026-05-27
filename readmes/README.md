@@ -625,6 +625,9 @@ await axiosInstance.put(`/api/targets/${commodityId}`, {
    ```bash
    python backend/init_db.py
    ```
+    Notes:
+    - This is the only supported database bootstrap command.
+    - `backend/create_db.py` has been retired after consolidation.
 
 ### **Frontend Setup**
 
