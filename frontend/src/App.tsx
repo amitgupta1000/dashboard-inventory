@@ -23,6 +23,9 @@ function App() {
   const [loadingDrilldown, setLoadingDrilldown] = useState(false);
   const [narrative, setNarrative] = useState<any>(null);
 
+  // Modal State
+  const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
+
   // UI State
   const [toast, setToast] = useState<any>(null);
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
@@ -130,12 +133,16 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (activeAnalyticsTab === 'inventory') {
-      fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
-    } else {
+    if (activeAnalyticsTab === 'summary') {
       fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
     }
-  }, [activeAnalyticsTab, summaryViewType, analyticsAsOfDate, analyticsBackdate]);
+  }, [summaryViewType, analyticsAsOfDate, analyticsBackdate]);
+
+  useEffect(() => {
+    if (inventoryModalOpen) {
+      fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
+    }
+  }, [inventoryModalOpen]);
 
 
 
@@ -262,14 +269,10 @@ function App() {
               {/* Tab Buttons */}
               <div className="shrink-0 flex gap-2 border-b border-slate-200">
                 <button
-                  onClick={() => setActiveAnalyticsTab('inventory')}
-                  className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider rounded-t-lg transition-all ${
-                    activeAnalyticsTab === 'inventory'
-                      ? 'bg-cyan-100 border-b-2 border-cyan-500 text-cyan-700'
-                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
+                  onClick={() => setInventoryModalOpen(true)}
+                  className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider rounded-t-lg transition-all bg-slate-50 text-slate-600 hover:bg-slate-100`}
                 >
-                  📦 Inventory (Vessel)
+                  📦 Inventory (Detail)
                 </button>
                 <button
                   onClick={() => setActiveAnalyticsTab('summary')}
@@ -286,25 +289,48 @@ function App() {
               {/* Tab Content */}
               <div className="flex-1 flex flex-col min-h-0">
                 
-                {/* INVENTORY TAB */}
-                {activeAnalyticsTab === 'inventory' && (
-                  <div className="flex-1 flex flex-col min-h-0">
-                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar flex-1">
-                      {loadingVesselDetails ? (
-                        <div className="text-center py-8 text-[11px] text-slate-400">Loading vessel data...</div>
-                      ) : vesselDetails.length === 0 ? (
-                        <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No vessel data available</div>
-                      ) : vesselDetails.slice(0, 50).map((row, idx) => (
+                {/* SUMMARY TAB */}
+                <div className="flex-1 flex flex-col min-h-0">
+                  {/* Summary Sub-tabs */}
+                  <div className="shrink-0 flex gap-1 bg-slate-100 p-1 rounded-lg mb-1">
+                    {(['product', 'company', 'port'] as const).map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => setSummaryViewType(type)}
+                        className={`flex-1 px-2 py-1 text-[8px] font-bold uppercase rounded transition-all ${
+                          summaryViewType === type
+                            ? 'bg-white text-cyan-700 border border-cyan-200 shadow-sm'
+                            : 'text-slate-600 hover:bg-white/50'
+                        }`}
+                      >
+                        {type === 'product' ? '📦 Product' : type === 'company' ? '🏢 Company' : '⛴️ Port'}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar flex-1">
+                    {loadingSummaryView ? (
+                      <div className="text-center py-8 text-[11px] text-slate-400">Loading summary data...</div>
+                    ) : summaryViewData.length === 0 ? (
+                      <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No summary data available</div>
+                    ) : summaryViewData.map((row, idx) => {
+                      const displayName = 
+                        summaryViewType === 'product' ? row.product_name :
+                        summaryViewType === 'company' ? row.company_name :
+                        row.port_name;
+                      return (
                         <div key={idx} className="p-2 bg-white border border-slate-100 rounded-lg space-y-1">
                           <div className="flex justify-between items-start">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-bold text-[9px] text-slate-900 truncate">{row.vessel_name}</p>
-                              <p className="text-[8px] text-slate-600 truncate">{row.product_name} • {row.port_name}</p>
-                            </div>
+                            <p className="font-bold text-[9px] text-slate-900 truncate">{displayName}</p>
+                            <span className="text-[8px] font-bold text-purple-600 whitespace-nowrap ml-1">₹{(row.stock_value / 1000000).toFixed(1)}M</span>
                           </div>
                           <div className="grid grid-cols-2 gap-1 text-[8px]">
                             <span className="text-slate-600">Stock: <span className="font-bold">{Number(row.physical_stock).toFixed(0)}</span></span>
-                            <span className="text-slate-600">Days: <span className="font-bold">{Number(row.inventory_days || 0).toFixed(0)}</span></span>
+                            <span className="text-slate-600">Days: <span className="font-bold">{Number(row.inventory_days || 0).toFixed(1)}</span></span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1 text-[8px]">
+                            <span className="text-slate-600">Cost: <span className="font-bold">₹{Number(row.cost_price_inr).toFixed(0)}/MT</span></span>
+                            <span className="text-slate-600">Sell: <span className="font-bold">₹{Number(row.average_selling_price_inr).toFixed(0)}/MT</span></span>
                           </div>
                           {row.delta_physical_stock !== null && (
                             <span className={`text-[8px] font-semibold ${row.delta_physical_stock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
@@ -312,66 +338,10 @@ function App() {
                             </span>
                           )}
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
-                )}
-
-                {/* SUMMARY TAB */}
-                {activeAnalyticsTab === 'summary' && (
-                  <div className="flex-1 flex flex-col min-h-0">
-                    {/* Summary Sub-tabs */}
-                    <div className="shrink-0 flex gap-1 bg-slate-100 p-1 rounded-lg mb-1">
-                      {(['product', 'company', 'port'] as const).map((type) => (
-                        <button
-                          key={type}
-                          onClick={() => setSummaryViewType(type)}
-                          className={`flex-1 px-2 py-1 text-[8px] font-bold uppercase rounded transition-all ${
-                            summaryViewType === type
-                              ? 'bg-white text-cyan-700 border border-cyan-200 shadow-sm'
-                              : 'text-slate-600 hover:bg-white/50'
-                          }`}
-                        >
-                          {type === 'product' ? '📦 Product' : type === 'company' ? '🏢 Company' : '⛴️ Port'}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar flex-1">
-                      {loadingSummaryView ? (
-                        <div className="text-center py-8 text-[11px] text-slate-400">Loading summary data...</div>
-                      ) : summaryViewData.length === 0 ? (
-                        <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No summary data available</div>
-                      ) : summaryViewData.map((row, idx) => {
-                        const displayName = 
-                          summaryViewType === 'product' ? row.product_name :
-                          summaryViewType === 'company' ? row.company_name :
-                          row.port_name;
-                        return (
-                          <div key={idx} className="p-2 bg-white border border-slate-100 rounded-lg space-y-1">
-                            <div className="flex justify-between items-start">
-                              <p className="font-bold text-[9px] text-slate-900 truncate">{displayName}</p>
-                              <span className="text-[8px] font-bold text-purple-600 whitespace-nowrap ml-1">₹{(row.stock_value / 1000000).toFixed(1)}M</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1 text-[8px]">
-                              <span className="text-slate-600">Stock: <span className="font-bold">{Number(row.physical_stock).toFixed(0)}</span></span>
-                              <span className="text-slate-600">Days: <span className="font-bold">{Number(row.inventory_days || 0).toFixed(1)}</span></span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-1 text-[8px]">
-                              <span className="text-slate-600">Cost: <span className="font-bold">₹{Number(row.cost_price_inr).toFixed(0)}/MT</span></span>
-                              <span className="text-slate-600">Sell: <span className="font-bold">₹{Number(row.average_selling_price_inr).toFixed(0)}/MT</span></span>
-                            </div>
-                            {row.delta_physical_stock !== null && (
-                              <span className={`text-[8px] font-semibold ${row.delta_physical_stock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                Δ {row.delta_physical_stock >= 0 ? '+' : ''}{Number(row.delta_physical_stock).toFixed(0)}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                </div>
 
               </div>
             </div>
