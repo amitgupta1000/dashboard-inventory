@@ -14,6 +14,7 @@ import tempfile
 from backend import gcs
 from backend.load_stock_report import load_stock_report
 from backend.load_market_data import load_market_data_from_excel
+from backend.ingestion_feedback import IngestionFeedback
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class FileUploadResponse(BaseModel):
     upload_type: str
     uploaded_at: datetime
     message: str
-    ingestion: Optional[dict] = None
+    ingestion: Optional[IngestionFeedback] = None
 
 class FileListResponse(BaseModel):
     """List of uploaded files by type"""
@@ -65,77 +66,82 @@ def _infer_report_date_from_filename(file_name: str):
         return None
 
 
-def _process_uploaded_file(upload_type: str, gcs_path: str, original_filename: str) -> dict:
-    """Unified workflow: download from GCS, parse, and upsert into destination table."""
-    file_bytes = gcs.download_file(gcs_path)
+def _process_uploaded_file(upload_type: str, file_path: str, original_filename: str) -> IngestionFeedback:
+    """
+    Unified workflow: parse and upsert into destination table.
+    
+    Args:
+        upload_type: 'inventory', 'prices', or 'sales'
+        file_path: Path to file (either temp file or GCS path in production)
+        original_filename: Original filename for logging/validation
+    
+    Returns:
+        IngestionFeedback with detailed processing results
+    """
     _, ext = os.path.splitext(original_filename or "")
     suffix = ext if ext else ".bin"
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        tmp.write(file_bytes)
-        tmp_path = tmp.name
-
+    # In local mode, file_path is already a temp file
+    # In production, we would download from GCS first
+    tmp_path = file_path
+    
     try:
-        try:
-            if upload_type == "inventory":
-                if suffix.lower() not in {".csv"}:
-                    return {
-                        "processed": False,
-                        "destination_table": "inventory_detail",
-                        "result": {
-                            "message": "Inventory parser currently supports CSV stock report format only",
-                        },
-                    }
+        if upload_type == "inventory":
+            if suffix.lower() not in {".csv", ".xlsx", ".xls"}:
+                from backend.ingestion_feedback import create_ingestion_feedback
+                return create_ingestion_feedback(
+                    status="failed",
+                    message="Inventory parser supports CSV and Excel (.xlsx/.xls) formats",
+                    total_rows=0,
+                    source_file=original_filename,
+                    destination_table="inventory_detail",
+                )
 
-                result = load_stock_report(tmp_path)
-                return {
-                    "processed": True,
-                    "destination_table": "inventory_detail",
-                    "result": result,
-                }
+            result = load_stock_report(tmp_path)
+            return result
 
-            if upload_type == "prices":
-                if suffix.lower() not in {".xlsx", ".xls"}:
-                    return {
-                        "processed": False,
-                        "destination_table": "market_data_hvb",
-                        "result": {
-                            "message": "Market price parser currently supports Excel (.xlsx/.xls) format only",
-                        },
-                    }
+        if upload_type == "prices":
+            if suffix.lower() not in {".xlsx", ".xls"}:
+                from backend.ingestion_feedback import create_ingestion_feedback
+                return create_ingestion_feedback(
+                    status="failed",
+                    message="Market price parser currently supports Excel (.xlsx/.xls) format only",
+                    total_rows=0,
+                    source_file=original_filename,
+                    destination_table="market_data_hvb",
+                )
 
-                report_date = _infer_report_date_from_filename(original_filename)
-                row_count = load_market_data_from_excel(tmp_path, report_date)
-                return {
-                    "processed": True,
-                    "destination_table": "market_data_hvb",
-                    "result": {
-                        "loaded": row_count,
-                        "report_date": str(report_date) if report_date else None,
-                    },
-                }
+            report_date = _infer_report_date_from_filename(original_filename)
+            result = load_market_data_from_excel(tmp_path, report_date)
+            return result
 
-            # Sales-register parser/upsert is not implemented yet.
-            return {
-                "processed": False,
-                "destination_table": None,
-                "result": {
-                    "message": "Upload stored in GCS; parser/upsert for sales-register is not implemented yet",
-                },
-            }
-        except Exception as exc:
-            return {
-                "processed": False,
-                "destination_table": None,
-                "result": {
-                    "message": f"Ingestion failed: {exc}",
-                },
-            }
+        # Sales-register parser/upsert is not implemented yet.
+        from backend.ingestion_feedback import create_ingestion_feedback
+        return create_ingestion_feedback(
+            status="failed",
+            message="Upload stored in GCS; parser/upsert for sales-register is not implemented yet",
+            total_rows=0,
+            source_file=original_filename,
+            destination_table=None,
+        )
+    
+    except Exception as exc:
+        from backend.ingestion_feedback import create_ingestion_feedback
+        return create_ingestion_feedback(
+            status="failed",
+            message=f"Ingestion failed: {str(exc)}",
+            total_rows=0,
+            errors=[str(exc)],
+            source_file=original_filename,
+            destination_table=None,
+        )
     finally:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
+        # Only cleanup if it's a temp file (local mode)
+        if tmp_path.startswith(tempfile.gettempdir()):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 # ============================================================================
 # INVENTORY UPLOADS
@@ -145,7 +151,8 @@ def _process_uploaded_file(upload_type: str, gcs_path: str, original_filename: s
 async def upload_inventory(file: UploadFile = File(...)):
     """
     Upload inventory data file.
-    Stores in GCS at: uploads/inventory/{timestamp}_{filename}
+    In production: stores in GCS at uploads/inventory/{timestamp}_{filename}
+    In local dev: processes directly without GCS
     
     Supported formats: .xlsx, .csv
     """
@@ -174,12 +181,25 @@ async def upload_inventory(file: UploadFile = File(...)):
                 detail="File is empty"
             )
         
-        # Upload to GCS
-        gcs_path = gcs.upload_inventory_file(file_bytes, file.filename)
+        # Check if we're in local dev mode (using SQLite)
+        use_sqlite = os.getenv('USE_SQLITE', '').lower() == 'true'
         
-        logger.info(f"Inventory file uploaded: {gcs_path}")
-        
-        ingestion_result = _process_uploaded_file("inventory", gcs_path, file.filename)
+        if use_sqlite:
+            # Local development: save to temp file and process directly
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            
+            gcs_path = f"local://{file.filename}"
+            logger.info(f"Processing inventory file locally: {file.filename}")
+            
+            ingestion_result = _process_uploaded_file("inventory", tmp_path, file.filename)
+        else:
+            # Production: upload to GCS first
+            gcs_path = gcs.upload_inventory_file(file_bytes, file.filename)
+            logger.info(f"Inventory file uploaded: {gcs_path}")
+            
+            ingestion_result = _process_uploaded_file("inventory", gcs_path, file.filename)
 
         return FileUploadResponse(
             success=True,
@@ -227,7 +247,8 @@ async def list_inventory_files():
 async def upload_prices(file: UploadFile = File(...)):
     """
     Upload market prices data file.
-    Stores in GCS at: uploads/prices/{timestamp}_{filename}
+    In production: stores in GCS at uploads/prices/{timestamp}_{filename}
+    In local dev: processes directly without GCS
     
     Supported formats: .xlsx, .csv
     """
@@ -256,12 +277,25 @@ async def upload_prices(file: UploadFile = File(...)):
                 detail="File is empty"
             )
         
-        # Upload to GCS
-        gcs_path = gcs.upload_prices_file(file_bytes, file.filename)
+        # Check if we're in local dev mode (using SQLite)
+        use_sqlite = os.getenv('USE_SQLITE', '').lower() == 'true'
         
-        logger.info(f"Prices file uploaded: {gcs_path}")
-        
-        ingestion_result = _process_uploaded_file("prices", gcs_path, file.filename)
+        if use_sqlite:
+            # Local development: save to temp file and process directly
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            
+            gcs_path = f"local://{file.filename}"
+            logger.info(f"Processing prices file locally: {file.filename}")
+            
+            ingestion_result = _process_uploaded_file("prices", tmp_path, file.filename)
+        else:
+            # Production: upload to GCS first
+            gcs_path = gcs.upload_prices_file(file_bytes, file.filename)
+            logger.info(f"Prices file uploaded: {gcs_path}")
+            
+            ingestion_result = _process_uploaded_file("prices", gcs_path, file.filename)
 
         return FileUploadResponse(
             success=True,
