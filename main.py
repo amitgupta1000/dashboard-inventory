@@ -34,6 +34,7 @@ from backend.routes.stock_analytics import (
     router as stock_analytics_router,
     build_stock_analytics,
 )
+from backend.routes.analytics_layer1 import router as analytics_layer1_router
 
 app = FastAPI(title="Inventory Management API")
 app.include_router(inventory_router)
@@ -41,6 +42,7 @@ app.include_router(uploads_router)
 app.include_router(targets_router)
 app.include_router(market_data_router)
 app.include_router(stock_analytics_router)
+app.include_router(analytics_layer1_router)
 
 # Configure CORS
 app.add_middleware(
