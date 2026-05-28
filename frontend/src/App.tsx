@@ -378,11 +378,10 @@ function App() {
             <p className="text-[11px] text-slate-600 font-medium">Track metrics and monitor inventory health status.</p>
           </div>
           
-          <div className="flex-1 flex flex-col justify-between min-h-0 px-5 py-4 space-y-4">
+          <div className="flex-1 flex flex-col min-h-0 px-5 py-4 space-y-2">
             
-            {/* Summary Stats Grid */}
-            {summary && (
-              <div className="shrink-0 grid grid-cols-2 gap-2">
+            {/* Layer 1 Analytics: Tabbed Interface - MOVED UP FOR VISIBILITY */}
+            <div className="flex flex-col min-h-0 space-y-2" style={{ minHeight: '450px' }}>
                 <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
                   <span className="text-[8px] font-bold text-slate-400 uppercase block">Products</span>
                   <span className="text-base font-extrabold text-slate-900">{summary.total_products}</span>
@@ -508,13 +507,13 @@ function App() {
               </div>
 
               {/* Tab Content */}
-              <div className="flex-1 flex flex-col min-h-0 space-y-2">
+              <div className="flex-1 flex flex-col min-h-0">
                 
                 {/* INVENTORY TAB */}
                 {activeAnalyticsTab === 'inventory' && (
-                  <div className="flex-1 flex flex-col min-h-0 space-y-2">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vessel-Level Details</span>
-                    <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar">
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <span className="shrink-0 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vessel-Level Details</span>
+                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar h-80">
                       {loadingVesselDetails ? (
                         <div className="text-center py-8 text-[11px] text-slate-400">Loading vessel data...</div>
                       ) : vesselDetails.length === 0 ? (
@@ -544,9 +543,9 @@ function App() {
 
                 {/* SUMMARY TAB */}
                 {activeAnalyticsTab === 'summary' && (
-                  <div className="flex-1 flex flex-col min-h-0 space-y-2">
+                  <div className="flex-1 flex flex-col min-h-0">
                     {/* Summary Sub-tabs */}
-                    <div className="shrink-0 flex gap-1 bg-slate-100 p-1 rounded-lg">
+                    <div className="shrink-0 flex gap-1 bg-slate-100 p-1 rounded-lg mb-1">
                       {(['product', 'company', 'port'] as const).map((type) => (
                         <button
                           key={type}
@@ -562,11 +561,11 @@ function App() {
                       ))}
                     </div>
 
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                    <span className="shrink-0 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
                       {summaryViewType === 'product' ? 'Products' : summaryViewType === 'company' ? 'Companies' : 'Ports'}
                     </span>
 
-                    <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar">
+                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar h-80">
                       {loadingSummaryView ? (
                         <div className="text-center py-8 text-[11px] text-slate-400">Loading summary data...</div>
                       ) : summaryViewData.length === 0 ? (
