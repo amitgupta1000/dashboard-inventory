@@ -378,49 +378,50 @@ function App() {
             <p className="text-[11px] text-slate-600 font-medium">Track metrics and monitor inventory health status.</p>
           </div>
           
-          <div className="flex-1 flex flex-col min-h-0 px-5 py-4 space-y-2">
+          <div className="flex-1 flex flex-col min-h-0 px-5 py-3 space-y-1">
             
-            {/* Layer 1 Analytics: Tabbed Interface - MOVED UP FOR VISIBILITY */}
-            <div className="flex flex-col min-h-0 space-y-2" style={{ minHeight: '450px' }}>
-                <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase block">Products</span>
-                  <span className="text-base font-extrabold text-slate-900">{summary.total_products}</span>
+            {/* Summary Stats Grid */}
+            {summary && (
+              <div className="shrink-0 grid grid-cols-2 gap-1.5">
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
+                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Products</span>
+                  <span className="text-sm font-extrabold text-slate-900">{summary.total_products}</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase block">Physical Stock</span>
-                  <span className="text-base font-extrabold text-slate-900">{(summary.total_physical_stock / 1000).toFixed(0)}K</span>
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
+                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Physical Stock</span>
+                  <span className="text-sm font-extrabold text-slate-900">{(summary.total_physical_stock / 1000).toFixed(0)}K</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase block">Sold Qty</span>
-                  <span className="text-base font-extrabold text-emerald-600">{(summary.total_sold_qty / 1000).toFixed(0)}K</span>
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
+                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Sold Qty</span>
+                  <span className="text-sm font-extrabold text-emerald-600">{(summary.total_sold_qty / 1000).toFixed(0)}K</span>
                 </div>
-                <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase block">Stock Value</span>
+                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
+                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Stock Value</span>
                   <span className="text-sm font-extrabold text-purple-600">₹{(summary.total_stock_value / 10000000).toFixed(1)}Cr</span>
                 </div>
               </div>
             )}
 
             {/* Date Filters */}
-            <div className="shrink-0 grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">As Of</label>
+            <div className="shrink-0 grid grid-cols-2 gap-1.5">
+              <div className="space-y-0.5">
+                <label className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">As Of</label>
                 <select
                   value={asOfDate}
                   onChange={(e) => setAsOfDate(e.target.value)}
-                  className="w-full text-[10px] px-2 py-1.5 rounded-md border border-slate-200 bg-white"
+                  className="w-full text-[9px] px-1.5 py-0.5 rounded-md border border-slate-200 bg-white"
                 >
                   {(availableDates || []).map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Compare To</label>
+              <div className="space-y-0.5">
+                <label className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Compare To</label>
                 <select
                   value={backdate}
                   onChange={(e) => setBackdate(e.target.value)}
-                  className="w-full text-[10px] px-2 py-1.5 rounded-md border border-slate-200 bg-white"
+                  className="w-full text-[9px] px-1.5 py-0.5 rounded-md border border-slate-200 bg-white"
                 >
                   <option value="">None</option>
                   {(availableDates || []).filter((d) => d !== asOfDate).map((d) => (
@@ -432,20 +433,17 @@ function App() {
 
             {/* Health Status */}
             {narrative && (
-              <div className="shrink-0 bg-slate-50/60 border border-slate-100 p-3 rounded-xl space-y-2">
-                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest">Overall Health</span>
-                <div className="flex items-center justify-between">
-                  <span className={`text-xs font-extrabold ${
+              <div className="shrink-0 bg-slate-50/60 border border-slate-100 p-1 rounded-lg flex items-center justify-between">
+                <span className={`text-[8px] font-extrabold ${
                     narrative.overall_health === 'HEALTHY' ? 'text-emerald-600' :
                     narrative.overall_health === 'CRITICAL' ? 'text-rose-600' : 'text-amber-600'
                   }`}>
                     {narrative.overall_health}
-                  </span>
-                  <div className="flex gap-2 text-[8px]">
-                    <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 font-bold">Critical: {narrative.critical_count}</span>
-                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">Warning: {narrative.warning_count}</span>
-                    <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold">Normal: {narrative.normal_count}</span>
-                  </div>
+                </span>
+                <div className="flex gap-1 text-[7px]">
+                  <span className="px-1 py-0 rounded bg-rose-100 text-rose-700 font-bold">C:{narrative.critical_count}</span>
+                  <span className="px-1 py-0 rounded bg-amber-100 text-amber-700 font-bold">W:{narrative.warning_count}</span>
+                  <span className="px-1 py-0 rounded bg-emerald-100 text-emerald-700 font-bold">N:{narrative.normal_count}</span>
                 </div>
               </div>
             )}
@@ -477,43 +475,13 @@ function App() {
                 </button>
               </div>
 
-              {/* Date Selectors (Common for both tabs) */}
-              <div className="shrink-0 grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">As Of</label>
-                  <select
-                    value={analyticsAsOfDate}
-                    onChange={(e) => setAnalyticsAsOfDate(e.target.value)}
-                    className="w-full text-[9px] px-2 py-1 rounded-md border border-slate-200 bg-white"
-                  >
-                    {analyticsAvailableDates.map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Compare To</label>
-                  <select
-                    value={analyticsBackdate}
-                    onChange={(e) => setAnalyticsBackdate(e.target.value)}
-                    className="w-full text-[9px] px-2 py-1 rounded-md border border-slate-200 bg-white"
-                  >
-                    <option value="">None</option>
-                    {analyticsAvailableDates.filter((d) => d !== analyticsAsOfDate).map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               {/* Tab Content */}
               <div className="flex-1 flex flex-col min-h-0">
                 
                 {/* INVENTORY TAB */}
                 {activeAnalyticsTab === 'inventory' && (
                   <div className="flex-1 flex flex-col min-h-0">
-                    <span className="shrink-0 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vessel-Level Details</span>
-                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar h-80">
+                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar flex-1">
                       {loadingVesselDetails ? (
                         <div className="text-center py-8 text-[11px] text-slate-400">Loading vessel data...</div>
                       ) : vesselDetails.length === 0 ? (
@@ -561,11 +529,7 @@ function App() {
                       ))}
                     </div>
 
-                    <span className="shrink-0 text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                      {summaryViewType === 'product' ? 'Products' : summaryViewType === 'company' ? 'Companies' : 'Ports'}
-                    </span>
-
-                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar h-80">
+                    <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar flex-1">
                       {loadingSummaryView ? (
                         <div className="text-center py-8 text-[11px] text-slate-400">Loading summary data...</div>
                       ) : summaryViewData.length === 0 ? (
