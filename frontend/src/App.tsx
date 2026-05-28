@@ -32,7 +32,9 @@ function App() {
   const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const API_BASE_URL = 'http://localhost:8000';
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+  const apiUrl = (path: string) => (API_BASE_URL ? `${API_BASE_URL}${path}` : path);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -41,7 +43,7 @@ function App() {
 
   const fetchAnalyticsLayerDates = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/analytics/dates`);
+      const response = await fetch(apiUrl('/api/analytics/dates'));
       const data = await response.json();
       if (data.success) {
         const dates = data.available_dates || [];
@@ -63,8 +65,8 @@ function App() {
       if (backdateParam) params.set('backdate', backdateParam);
       
       const url = params.toString()
-        ? `${API_BASE_URL}/api/analytics/vessel-detail?${params.toString()}`
-        : `${API_BASE_URL}/api/analytics/vessel-detail`;
+        ? apiUrl(`/api/analytics/vessel-detail?${params.toString()}`)
+        : apiUrl('/api/analytics/vessel-detail');
       
       const response = await fetch(url);
       const data = await response.json();
@@ -87,7 +89,7 @@ function App() {
       if (asOfParam) params.set('as_of', asOfParam);
       if (backdateParam) params.set('backdate', backdateParam);
       
-      const response = await fetch(`${API_BASE_URL}/api/analytics/summary?${params.toString()}`);
+      const response = await fetch(apiUrl(`/api/analytics/summary?${params.toString()}`));
       const data = await response.json();
       if (data.success) {
         setSummaryViewData(data.data || []);
@@ -116,7 +118,7 @@ function App() {
       if (asOfParam) params.set('as_of', asOfParam);
       if (backdateParam) params.set('backdate', backdateParam);
 
-      const response = await fetch(`${API_BASE_URL}/api/stock-analytics/drilldown?${params.toString()}`);
+      const response = await fetch(apiUrl(`/api/stock-analytics/drilldown?${params.toString()}`));
       const data = await response.json();
       if (data.success) {
         setDrilldownRows(data.data || []);
@@ -129,9 +131,51 @@ function App() {
     }
   };
 
+  const fetchNarrative = async (asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+    try {
+      const params = new URLSearchParams();
+      if (asOfParam) params.set('as_of', asOfParam);
+      if (backdateParam) params.set('backdate', backdateParam);
+
+      const url = params.toString()
+        ? apiUrl(`/api/intelligence/narrative?${params.toString()}`)
+        : apiUrl('/api/intelligence/narrative');
+
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setNarrative(data.data || null);
+      }
+    } catch (e) {
+      console.error('Failed to fetch narrative:', e);
+      setNarrative(null);
+    }
+  };
+
+  const refreshAnalyticsData = async () => {
+    await fetchAnalyticsLayerDates();
+    await fetchNarrative(analyticsAsOfDate, analyticsBackdate);
+
+    if (inventoryModalOpen) {
+      await fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
+    }
+
+    if (summaryModalOpen || activeAnalyticsTab === 'summary') {
+      await fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
+    }
+
+    if (selectedProduct) {
+      await fetchDrilldown(selectedProduct, analyticsAsOfDate, analyticsBackdate);
+    }
+  };
+
   useEffect(() => {
     fetchAnalyticsLayerDates();
   }, []);
+
+  useEffect(() => {
+    fetchNarrative(analyticsAsOfDate, analyticsBackdate);
+  }, [analyticsAsOfDate, analyticsBackdate]);
 
   useEffect(() => {
     if (activeAnalyticsTab === 'summary') {
@@ -150,6 +194,12 @@ function App() {
       fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
     }
   }, [summaryModalOpen, summaryViewType, analyticsAsOfDate, analyticsBackdate]);
+
+  useEffect(() => {
+    if (selectedProduct) {
+      fetchDrilldown(selectedProduct, analyticsAsOfDate, analyticsBackdate);
+    }
+  }, [selectedProduct, analyticsAsOfDate, analyticsBackdate]);
 
 
 
@@ -452,7 +502,25 @@ function App() {
                 ) : (
                   <div className="space-y-1.5">
                     {vesselDetails.map((row, idx) => (
-                      <div key={idx} className="p-2.5 bg-gradient-to-r from-slate-50 to-cyan-50 border border-slate-200 rounded-lg hover:border-cyan-300 transition-all">
+                      <div
+                        key={idx}
+                        className="p-2.5 bg-gradient-to-r from-slate-50 to-cyan-50 border border-slate-200 rounded-lg hover:border-cyan-300 transition-all cursor-pointer"
+                        onClick={() => {
+                          setSelectedProduct({
+                            product_name: row.product_name,
+                            port_name: row.port_name,
+                            company_name: row.company_name,
+                            physical_stock: row.physical_stock,
+                            stock_value: Number(row.physical_stock || 0) * Number(row.cost_price_inr || 0),
+                            average_selling_price_inr: row.average_selling_price_inr,
+                            cost_price_inr: row.cost_price_inr,
+                            margin_per_mt_inr: Number(row.average_selling_price_inr || 0) - Number(row.cost_price_inr || 0),
+                            vessel_count: 1,
+                          });
+                          setInventoryModalOpen(false);
+                        }}
+                        title="Select product for Layer 2 drill-down"
+                      >
                         {/* Vessel Header */}
                         <div className="flex justify-between items-start mb-2">
                           <div className="min-w-0 flex-1">
@@ -601,9 +669,28 @@ function App() {
                       const entityCount = 
                         summaryViewType === 'product' ? row.vessel_count :
                         summaryViewType === 'company' ? row.product_count :
-                        row.port_count;
+                        row.company_count;
                       return (
-                        <div key={idx} className="p-2.5 bg-gradient-to-r from-slate-50 to-emerald-50 border border-slate-200 rounded-lg hover:border-emerald-300 transition-all">
+                        <div
+                          key={idx}
+                          className="p-2.5 bg-gradient-to-r from-slate-50 to-emerald-50 border border-slate-200 rounded-lg hover:border-emerald-300 transition-all cursor-pointer"
+                          onClick={() => {
+                            if (summaryViewType === 'product') {
+                              setSelectedProduct({
+                                product_name: row.product_name,
+                                port_name: '',
+                                company_name: '',
+                                physical_stock: row.physical_stock,
+                                stock_value: row.stock_value,
+                                average_selling_price_inr: row.average_selling_price_inr,
+                                cost_price_inr: row.cost_price_inr,
+                                margin_per_mt_inr: row.margin_per_mt_inr,
+                                vessel_count: row.vessel_count,
+                              });
+                              showToast('Pick a vessel row from Inventory Details to enable drill-down', 'success');
+                            }
+                          }}
+                        >
                           {/* Header */}
                           <div className="flex justify-between items-start mb-2">
                             <div className="min-w-0 flex-1">
@@ -690,9 +777,9 @@ function App() {
       <UploadPanel 
         isOpen={uploadPanelOpen}
         onClose={() => setUploadPanelOpen(false)}
-        onUploadSuccess={(type) => {
+        onUploadSuccess={async (type) => {
           showToast(`${type} file uploaded successfully!`);
-          // Optionally refresh data here
+          await refreshAnalyticsData();
         }}
       />
       

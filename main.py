@@ -8,8 +8,8 @@ load_dotenv()  # Load environment variables from .env file
 env_path = Path(__file__).parent / 'backend' / '.env'
 load_dotenv(env_path, override=True)
 
-# Now set USE_SQLITE to true for local development (can override for production)
-os.environ.setdefault('USE_SQLITE', 'true')
+# DB mode is controlled via USE_SQLITE in environment.
+# For Cloud SQL migration set USE_SQLITE=false and provide CLOUD_SQL_* vars.
 
 # GCS credentials can be configured via:
 # 1. GOOGLE_APPLICATION_CREDENTIALS env var (path to service account JSON)

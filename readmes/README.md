@@ -613,11 +613,16 @@ await axiosInstance.put(`/api/targets/${commodityId}`, {
    ```bash
    # Create .env in backend/ directory
    cat > backend/.env << EOF
-   USE_SQLITE=true
-   # OR for PostgreSQL:
+  # Cloud SQL (PostgreSQL) - recommended
+  USE_SQLITE=false
    CLOUD_SQL_PASSWORD=your_password
    CLOUD_SQL_HOST=your_host
+  CLOUD_SQL_PORT=5432
+  CLOUD_SQL_USER=postgres
    CLOUD_SQL_DATABASE=inventory
+
+  # Optional local fallback:
+  # USE_SQLITE=true
    EOF
    ```
 
@@ -643,8 +648,9 @@ await axiosInstance.put(`/api/targets/${commodityId}`, {
 
 3. **Configure API endpoint**
    ```bash
-   # Check App.tsx for API_BASE_URL
-   # Default: http://localhost:8000
+  # Optional (defaults to same-origin / Vite proxy)
+  # frontend/.env
+  VITE_API_BASE_URL=http://localhost:8000
    ```
 
 ---

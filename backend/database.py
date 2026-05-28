@@ -1,6 +1,7 @@
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import (
@@ -25,6 +26,7 @@ import logging
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
 logger = logging.getLogger(__name__)
 

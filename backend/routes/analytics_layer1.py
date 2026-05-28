@@ -31,7 +31,7 @@ def _parse_iso_date(raw: str | None) -> date | None:
     try:
         return datetime.strptime(raw, "%Y-%m-%d").date()
     except Exception:
-        return None
+        raise HTTPException(status_code=400, detail=f"Invalid date format '{raw}'. Use YYYY-MM-DD")
 
 
 def _to_float(value: Any) -> float:
@@ -78,6 +78,9 @@ def _resolve_dates(
                 backdate = d
                 break
 
+    if backdate is not None and backdate >= as_of:
+        raise HTTPException(status_code=400, detail="backdate must be earlier than as_of")
+
     return as_of, backdate, available_dates
 
 
@@ -99,8 +102,8 @@ def _load_vessel_details(engine: sqlalchemy.Engine, target_date: date | None) ->
             sold_qty_pending_lifting,
             physical_stock,
             otr_qty,
-            cost_price_INR,
-            average_selling_price_INR,
+            "cost_price_INR",
+            "average_selling_price_INR",
             no_of_days_of_stock
         FROM inventory_detail
         WHERE date = :target_date
@@ -152,6 +155,7 @@ def _aggregate_by_product(details: list[dict]) -> list[dict]:
                 "vessel_count": 0,
                 "company_count": 0,
                 "port_count": 0,
+                "vessel_names": set(),
             }
         
         agg = grouped[product]
@@ -171,7 +175,8 @@ def _aggregate_by_product(details: list[dict]) -> list[dict]:
             agg["inventory_days_sum"] += _to_float(row["inventory_days"])
             agg["inventory_days_count"] += 1
         
-        agg["vessel_count"] = max(agg["vessel_count"], len(set(r["vessel_name"] for r in details if r["product_name"] == product)))
+        if row.get("vessel_name"):
+            agg["vessel_names"].add(row["vessel_name"])
     
     result = []
     for product, agg in grouped.items():
@@ -196,7 +201,7 @@ def _aggregate_by_product(details: list[dict]) -> list[dict]:
             "average_selling_price_inr": round(avg_sell, 2),
             "margin_per_mt_inr": round(avg_sell - avg_cost, 2),
             "stock_value": round(stock_value, 2),
-            "vessel_count": agg["vessel_count"],
+            "vessel_count": len(agg["vessel_names"]),
         })
     
     return sorted(result, key=lambda x: x["stock_value"], reverse=True)
@@ -222,6 +227,8 @@ def _aggregate_by_company(details: list[dict]) -> list[dict]:
                 "inventory_days_count": 0,
                 "product_count": 0,
                 "port_count": 0,
+                "product_names": set(),
+                "port_names": set(),
             }
         
         agg = grouped[company]
@@ -240,6 +247,11 @@ def _aggregate_by_company(details: list[dict]) -> list[dict]:
         if row["inventory_days"] is not None:
             agg["inventory_days_sum"] += _to_float(row["inventory_days"])
             agg["inventory_days_count"] += 1
+
+        if row.get("product_name"):
+            agg["product_names"].add(row["product_name"])
+        if row.get("port_name"):
+            agg["port_names"].add(row["port_name"])
     
     result = []
     for company, agg in grouped.items():
@@ -264,8 +276,8 @@ def _aggregate_by_company(details: list[dict]) -> list[dict]:
             "average_selling_price_inr": round(avg_sell, 2),
             "margin_per_mt_inr": round(avg_sell - avg_cost, 2),
             "stock_value": round(stock_value, 2),
-            "product_count": len(set(r["product_name"] for r in details if r["company_name"] == company)),
-            "port_count": len(set(r["port_name"] for r in details if r["company_name"] == company)),
+            "product_count": len(agg["product_names"]),
+            "port_count": len(agg["port_names"]),
         })
     
     return sorted(result, key=lambda x: x["stock_value"], reverse=True)
@@ -291,6 +303,8 @@ def _aggregate_by_port(details: list[dict]) -> list[dict]:
                 "inventory_days_count": 0,
                 "product_count": 0,
                 "company_count": 0,
+                "product_names": set(),
+                "company_names": set(),
             }
         
         agg = grouped[port]
@@ -309,6 +323,11 @@ def _aggregate_by_port(details: list[dict]) -> list[dict]:
         if row["inventory_days"] is not None:
             agg["inventory_days_sum"] += _to_float(row["inventory_days"])
             agg["inventory_days_count"] += 1
+
+        if row.get("product_name"):
+            agg["product_names"].add(row["product_name"])
+        if row.get("company_name"):
+            agg["company_names"].add(row["company_name"])
     
     result = []
     for port, agg in grouped.items():
@@ -333,8 +352,8 @@ def _aggregate_by_port(details: list[dict]) -> list[dict]:
             "average_selling_price_inr": round(avg_sell, 2),
             "margin_per_mt_inr": round(avg_sell - avg_cost, 2),
             "stock_value": round(stock_value, 2),
-            "product_count": len(set(r["product_name"] for r in details if r["port_name"] == port)),
-            "company_count": len(set(r["company_name"] for r in details if r["port_name"] == port)),
+            "product_count": len(agg["product_names"]),
+            "company_count": len(agg["company_names"]),
         })
     
     return sorted(result, key=lambda x: x["stock_value"], reverse=True)

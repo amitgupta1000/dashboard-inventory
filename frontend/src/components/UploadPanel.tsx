@@ -6,7 +6,9 @@ import {
 import axios from 'axios';
 import TargetEditor from './TargetEditor';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+const apiUrl = (path: string) => (API_BASE_URL ? `${API_BASE_URL}${path}` : path);
 
 interface UploadStatus {
   type: 'inventory' | 'prices' | 'sales' | null;
@@ -55,7 +57,7 @@ const UploadPanel: React.FC<UploadPanelProps> = ({ isOpen, onClose, onUploadSucc
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await axios.post(`${API_BASE_URL}${endpoint}`, formData, {
+      const response = await axios.post(apiUrl(endpoint), formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

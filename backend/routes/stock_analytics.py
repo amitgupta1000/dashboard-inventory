@@ -29,7 +29,10 @@ def _normalize_product_name(name: str | None) -> str:
 def _parse_iso_date(raw: str | None) -> date | None:
     if not raw:
         return None
-    return datetime.strptime(raw, "%Y-%m-%d").date()
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Invalid date format '{raw}'. Use YYYY-MM-DD")
 
 
 def _to_float(value: Any) -> float:
@@ -74,6 +77,9 @@ def _resolve_dates(
                 backdate = d
                 break
 
+    if backdate is not None and backdate >= as_of:
+        raise HTTPException(status_code=400, detail="backdate must be earlier than as_of")
+
     return as_of, backdate, available_dates
 
 
@@ -94,8 +100,8 @@ def _load_stock_rows_for_date(engine: sqlalchemy.Engine, target_date: date | Non
             sold_qty_pending_lifting,
             physical_stock,
             otr_qty,
-            cost_price_INR,
-            average_selling_price_INR,
+            "cost_price_INR",
+            "average_selling_price_INR",
             no_of_days_of_stock
         FROM inventory_detail
         WHERE date = :target_date
