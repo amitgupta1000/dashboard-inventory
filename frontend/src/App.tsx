@@ -468,6 +468,133 @@ function App() {
 
       </main>
 
+      {/* Inventory Detail Modal */}
+      {inventoryModalOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="w-3 h-3 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-500 shadow-md"></span>
+                <h2 className="text-lg font-bold text-slate-900">Inventory Details (Latest Config Date)</h2>
+              </div>
+              <button
+                onClick={() => setInventoryModalOpen(false)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all"
+                title="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="p-4 space-y-1.5">
+                {loadingVesselDetails ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <div className="inline-block text-3xl mb-3">⏳</div>
+                    <p className="font-medium">Loading inventory data...</p>
+                  </div>
+                ) : vesselDetails.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <div className="inline-block text-3xl mb-3">📭</div>
+                    <p className="font-medium">No inventory data available</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {vesselDetails.map((row, idx) => (
+                      <div key={idx} className="p-2.5 bg-gradient-to-r from-slate-50 to-cyan-50 border border-slate-200 rounded-lg hover:border-cyan-300 transition-all">
+                        {/* Vessel Header */}
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-xs text-slate-900 truncate">{row.vessel_name}</p>
+                            <p className="text-[11px] text-slate-600 truncate">{row.product_name}</p>
+                          </div>
+                          <div className="ml-2 text-right">
+                            <p className="text-[10px] text-slate-500"><span className="font-semibold text-slate-700">{row.company_name}</span></p>
+                            <p className="text-[10px] text-slate-500">{row.port_name}</p>
+                          </div>
+                        </div>
+
+                        {/* All Fields Grid - Compact */}
+                        <div className="grid grid-cols-6 gap-1.5 text-[10px]">
+                          {/* Col 1 */}
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Date</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{row.date ? row.date.split('-').slice(1).join('-') : 'N/A'}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Vessel Date</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{row.vessel_date ? row.vessel_date.split('-').slice(1).join('-') : 'N/A'}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Terminal</p>
+                            <p className="font-bold text-slate-900 text-[10px] truncate">{row.terminal || 'N/A'}</p>
+                          </div>
+
+                          {/* Col 2 - Stock Quantities */}
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Physical Stock</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{Number(row.physical_stock || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Unsold Qty</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{Number(row.unsold_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Sold Pending</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{Number(row.sold_qty_pending_lifting || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+
+                          {/* Col 3 - Other Metrics */}
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">OTR Qty</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{Number(row.otr_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Inventory Days</p>
+                            <p className="font-bold text-slate-900 text-[10px]">{Number(row.inventory_days || 0).toFixed(1)}</p>
+                          </div>
+
+                          {/* Col 4 - Pricing */}
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Cost/MT</p>
+                            <p className="font-bold text-slate-900 text-[10px]">₹{Number(row.cost_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Sell Price/MT</p>
+                            <p className="font-bold text-slate-900 text-[10px]">₹{Number(row.average_selling_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div className={`bg-white rounded p-1.5 border ${row.average_selling_price_inr - row.cost_price_inr >= 0 ? 'border-emerald-200' : 'border-rose-200'}`}>
+                            <p className="text-slate-500 font-semibold text-[9px]">Margin/MT</p>
+                            <p className={`font-bold text-[10px] ${row.average_selling_price_inr - row.cost_price_inr >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              ₹{Number((row.average_selling_price_inr || 0) - (row.cost_price_inr || 0)).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <p className="text-xs text-slate-600">
+                Showing <span className="font-bold text-slate-900">{Math.min(vesselDetails.length, 100)}</span> of <span className="font-bold text-slate-900">{vesselDetails.length}</span> records
+              </p>
+              <button
+                onClick={() => setInventoryModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Panel Sidebar */}
       <UploadPanel 
         isOpen={uploadPanelOpen}
