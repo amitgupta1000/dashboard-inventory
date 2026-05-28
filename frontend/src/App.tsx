@@ -27,6 +27,17 @@ function App() {
   const [drilldownRows, setDrilldownRows] = useState<any[]>([]);
   const [loadingDrilldown, setLoadingDrilldown] = useState(false);
 
+  // Layer 1 Analytics: Tab-based exploration
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState<'inventory' | 'summary'>('inventory');
+  const [summaryViewType, setSummaryViewType] = useState<'product' | 'company' | 'port'>('product');
+  const [vesselDetails, setVesselDetails] = useState<any[]>([]);
+  const [summaryViewData, setSummaryViewData] = useState<any[]>([]);
+  const [loadingVesselDetails, setLoadingVesselDetails] = useState(false);
+  const [loadingSummaryView, setLoadingSummaryView] = useState(false);
+  const [analyticsAsOfDate, setAnalyticsAsOfDate] = useState('');
+  const [analyticsBackdate, setAnalyticsBackdate] = useState('');
+  const [analyticsAvailableDates, setAnalyticsAvailableDates] = useState<string[]>([]);
+
   const API_BASE_URL = 'http://localhost:8000';
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -149,7 +160,77 @@ function App() {
   useEffect(() => {
     fetchInventoryData();
     fetchAnalyticsData();
+    fetchAnalyticsLayerDates();
   }, []);
+
+  const fetchAnalyticsLayerDates = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/analytics/dates`);
+      const data = await response.json();
+      if (data.success) {
+        const dates = data.available_dates || [];
+        setAnalyticsAvailableDates(dates);
+        if (dates.length > 0 && !analyticsAsOfDate) {
+          setAnalyticsAsOfDate(dates[0]);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch analytics dates:', e);
+    }
+  };
+
+  const fetchVesselDetails = async (asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+    setLoadingVesselDetails(true);
+    try {
+      const params = new URLSearchParams();
+      if (asOfParam) params.set('as_of', asOfParam);
+      if (backdateParam) params.set('backdate', backdateParam);
+      
+      const url = params.toString()
+        ? `${API_BASE_URL}/api/analytics/vessel-detail?${params.toString()}`
+        : `${API_BASE_URL}/api/analytics/vessel-detail`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setVesselDetails(data.data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch vessel details:', e);
+      showToast('Failed to load vessel details', 'error');
+    } finally {
+      setLoadingVesselDetails(false);
+    }
+  };
+
+  const fetchSummaryView = async (viewType = summaryViewType, asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+    setLoadingSummaryView(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('view_type', viewType);
+      if (asOfParam) params.set('as_of', asOfParam);
+      if (backdateParam) params.set('backdate', backdateParam);
+      
+      const response = await fetch(`${API_BASE_URL}/api/analytics/summary?${params.toString()}`);
+      const data = await response.json();
+      if (data.success) {
+        setSummaryViewData(data.data || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch summary view:', e);
+      showToast('Failed to load summary view', 'error');
+    } finally {
+      setLoadingSummaryView(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeAnalyticsTab === 'inventory') {
+      fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
+    } else {
+      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
+    }
+  }, [activeAnalyticsTab, summaryViewType, analyticsAsOfDate, analyticsBackdate]);
 
   const initializeForm = (product: any) => {
     setFormData({
@@ -370,58 +451,157 @@ function App() {
               </div>
             )}
 
-            {/* Grouped Stock Summary */}
+            {/* Layer 1 Analytics: Tabbed Interface */}
             <div className="flex-1 flex flex-col min-h-0 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Stock Summary (Product + Port + Company)</span>
+              
+              {/* Tab Buttons */}
+              <div className="shrink-0 flex gap-2 border-b border-slate-200">
                 <button
-                  onClick={handleRefresh}
-                  className="text-[9px] px-2 py-1 rounded-md border border-cyan-200 text-cyan-700 hover:bg-cyan-50"
+                  onClick={() => setActiveAnalyticsTab('inventory')}
+                  className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider rounded-t-lg transition-all ${
+                    activeAnalyticsTab === 'inventory'
+                      ? 'bg-cyan-100 border-b-2 border-cyan-500 text-cyan-700'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
                 >
-                  Apply
+                  📦 Inventory (Vessel)
+                </button>
+                <button
+                  onClick={() => setActiveAnalyticsTab('summary')}
+                  className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider rounded-t-lg transition-all ${
+                    activeAnalyticsTab === 'summary'
+                      ? 'bg-cyan-100 border-b-2 border-cyan-500 text-cyan-700'
+                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  📊 Summary
                 </button>
               </div>
 
-              <div className="shrink-0">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search product, port, company"
-                  className="w-full text-[10px] px-2 py-1.5 rounded-md border border-slate-200 bg-white"
-                />
+              {/* Date Selectors (Common for both tabs) */}
+              <div className="shrink-0 grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">As Of</label>
+                  <select
+                    value={analyticsAsOfDate}
+                    onChange={(e) => setAnalyticsAsOfDate(e.target.value)}
+                    className="w-full text-[9px] px-2 py-1 rounded-md border border-slate-200 bg-white"
+                  >
+                    {analyticsAvailableDates.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Compare To</label>
+                  <select
+                    value={analyticsBackdate}
+                    onChange={(e) => setAnalyticsBackdate(e.target.value)}
+                    className="w-full text-[9px] px-2 py-1 rounded-md border border-slate-200 bg-white"
+                  >
+                    <option value="">None</option>
+                    {analyticsAvailableDates.filter((d) => d !== analyticsAsOfDate).map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              
-              <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar">
-                {loadingInventory ? (
-                  <div className="text-center py-8 text-[11px] text-slate-400">Loading...</div>
-                ) : filteredInventory.length === 0 ? (
-                  <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No rows for selected filters</div>
-                ) : filteredInventory.slice(0, 30).map((row, idx) => {
-                  const colors = getAlertColor(row.alert_level);
-                  const IconComponent = colors.icon;
-                  return (
-                    <div 
-                      key={idx}
-                      onClick={() => {
-                        setSelectedProduct(row);
-                        fetchDrilldown(row);
-                      }}
-                      className={`p-2 rounded-lg border ${colors.bg} ${colors.border} flex gap-2`}
-                    >
-                      <IconComponent className={`w-3.5 h-3.5 ${colors.text} flex-shrink-0 mt-0.5`} />
-                      <div className="min-w-0 flex-1">
-                        <p className={`font-bold text-[9px] ${colors.text} truncate`}>{row.product_name}</p>
-                        <p className={`text-[8px] ${colors.text} opacity-80 truncate`}>{row.port_name} • {row.company_name}</p>
-                        <div className="grid grid-cols-3 gap-2 mt-1 text-[8px] opacity-90">
-                          <span>Stock: {Number(row.physical_stock || 0).toFixed(0)}</span>
-                          <span>Δ: {Number(row.delta_physical_stock || 0).toFixed(0)}</span>
-                          <span>Margin: ₹{Number(row.margin_per_mt_inr || 0).toFixed(0)}</span>
+
+              {/* Tab Content */}
+              <div className="flex-1 flex flex-col min-h-0 space-y-2">
+                
+                {/* INVENTORY TAB */}
+                {activeAnalyticsTab === 'inventory' && (
+                  <div className="flex-1 flex flex-col min-h-0 space-y-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Vessel-Level Details</span>
+                    <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar">
+                      {loadingVesselDetails ? (
+                        <div className="text-center py-8 text-[11px] text-slate-400">Loading vessel data...</div>
+                      ) : vesselDetails.length === 0 ? (
+                        <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No vessel data available</div>
+                      ) : vesselDetails.slice(0, 50).map((row, idx) => (
+                        <div key={idx} className="p-2 bg-white border border-slate-100 rounded-lg space-y-1">
+                          <div className="flex justify-between items-start">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-[9px] text-slate-900 truncate">{row.vessel_name}</p>
+                              <p className="text-[8px] text-slate-600 truncate">{row.product_name} • {row.port_name}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-1 text-[8px]">
+                            <span className="text-slate-600">Stock: <span className="font-bold">{Number(row.physical_stock).toFixed(0)}</span></span>
+                            <span className="text-slate-600">Days: <span className="font-bold">{Number(row.inventory_days || 0).toFixed(0)}</span></span>
+                          </div>
+                          {row.delta_physical_stock !== null && (
+                            <span className={`text-[8px] font-semibold ${row.delta_physical_stock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              Δ {row.delta_physical_stock >= 0 ? '+' : ''}{Number(row.delta_physical_stock).toFixed(0)}
+                            </span>
+                          )}
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  );
-                })}
+                  </div>
+                )}
+
+                {/* SUMMARY TAB */}
+                {activeAnalyticsTab === 'summary' && (
+                  <div className="flex-1 flex flex-col min-h-0 space-y-2">
+                    {/* Summary Sub-tabs */}
+                    <div className="shrink-0 flex gap-1 bg-slate-100 p-1 rounded-lg">
+                      {(['product', 'company', 'port'] as const).map((type) => (
+                        <button
+                          key={type}
+                          onClick={() => setSummaryViewType(type)}
+                          className={`flex-1 px-2 py-1 text-[8px] font-bold uppercase rounded transition-all ${
+                            summaryViewType === type
+                              ? 'bg-white text-cyan-700 border border-cyan-200 shadow-sm'
+                              : 'text-slate-600 hover:bg-white/50'
+                          }`}
+                        >
+                          {type === 'product' ? '📦 Product' : type === 'company' ? '🏢 Company' : '⛴️ Port'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                      {summaryViewType === 'product' ? 'Products' : summaryViewType === 'company' ? 'Companies' : 'Ports'}
+                    </span>
+
+                    <div className="flex-1 overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar">
+                      {loadingSummaryView ? (
+                        <div className="text-center py-8 text-[11px] text-slate-400">Loading summary data...</div>
+                      ) : summaryViewData.length === 0 ? (
+                        <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No summary data available</div>
+                      ) : summaryViewData.map((row, idx) => {
+                        const displayName = 
+                          summaryViewType === 'product' ? row.product_name :
+                          summaryViewType === 'company' ? row.company_name :
+                          row.port_name;
+                        return (
+                          <div key={idx} className="p-2 bg-white border border-slate-100 rounded-lg space-y-1">
+                            <div className="flex justify-between items-start">
+                              <p className="font-bold text-[9px] text-slate-900 truncate">{displayName}</p>
+                              <span className="text-[8px] font-bold text-purple-600 whitespace-nowrap ml-1">₹{(row.stock_value / 1000000).toFixed(1)}M</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1 text-[8px]">
+                              <span className="text-slate-600">Stock: <span className="font-bold">{Number(row.physical_stock).toFixed(0)}</span></span>
+                              <span className="text-slate-600">Days: <span className="font-bold">{Number(row.inventory_days || 0).toFixed(1)}</span></span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-1 text-[8px]">
+                              <span className="text-slate-600">Cost: <span className="font-bold">₹{Number(row.cost_price_inr).toFixed(0)}/MT</span></span>
+                              <span className="text-slate-600">Sell: <span className="font-bold">₹{Number(row.average_selling_price_inr).toFixed(0)}/MT</span></span>
+                            </div>
+                            {row.delta_physical_stock !== null && (
+                              <span className={`text-[8px] font-semibold ${row.delta_physical_stock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                Δ {row.delta_physical_stock >= 0 ? '+' : ''}{Number(row.delta_physical_stock).toFixed(0)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
           </div>
