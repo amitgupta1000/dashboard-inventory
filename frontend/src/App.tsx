@@ -25,6 +25,7 @@ function App() {
 
   // Modal State
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
 
   // UI State
   const [toast, setToast] = useState<any>(null);
@@ -143,6 +144,12 @@ function App() {
       fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
     }
   }, [inventoryModalOpen]);
+
+  useEffect(() => {
+    if (summaryModalOpen) {
+      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
+    }
+  }, [summaryModalOpen, summaryViewType, analyticsAsOfDate, analyticsBackdate]);
 
 
 
@@ -275,12 +282,8 @@ function App() {
                   📦 Inventory (Detail)
                 </button>
                 <button
-                  onClick={() => setActiveAnalyticsTab('summary')}
-                  className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider rounded-t-lg transition-all ${
-                    activeAnalyticsTab === 'summary'
-                      ? 'bg-cyan-100 border-b-2 border-cyan-500 text-cyan-700'
-                      : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
+                  onClick={() => setSummaryModalOpen(true)}
+                  className={`px-3 py-2 text-[9px] font-bold uppercase tracking-wider rounded-t-lg transition-all bg-slate-50 text-slate-600 hover:bg-slate-100`}
                 >
                   📊 Summary
                 </button>
@@ -288,61 +291,7 @@ function App() {
 
               {/* Tab Content */}
               <div className="flex-1 flex flex-col min-h-0">
-                
-                {/* SUMMARY TAB */}
-                <div className="flex-1 flex flex-col min-h-0">
-                  {/* Summary Sub-tabs */}
-                  <div className="shrink-0 flex gap-1 bg-slate-100 p-1 rounded-lg mb-1">
-                    {(['product', 'company', 'port'] as const).map((type) => (
-                      <button
-                        key={type}
-                        onClick={() => setSummaryViewType(type)}
-                        className={`flex-1 px-2 py-1 text-[8px] font-bold uppercase rounded transition-all ${
-                          summaryViewType === type
-                            ? 'bg-white text-cyan-700 border border-cyan-200 shadow-sm'
-                            : 'text-slate-600 hover:bg-white/50'
-                        }`}
-                      >
-                        {type === 'product' ? '📦 Product' : type === 'company' ? '🏢 Company' : '⛴️ Port'}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="overflow-y-auto border border-slate-100 rounded-xl p-2 space-y-1.5 bg-slate-50/50 custom-scrollbar flex-1">
-                    {loadingSummaryView ? (
-                      <div className="text-center py-8 text-[11px] text-slate-400">Loading summary data...</div>
-                    ) : summaryViewData.length === 0 ? (
-                      <div className="text-center py-4 text-[10px] text-slate-500 font-semibold">No summary data available</div>
-                    ) : summaryViewData.map((row, idx) => {
-                      const displayName = 
-                        summaryViewType === 'product' ? row.product_name :
-                        summaryViewType === 'company' ? row.company_name :
-                        row.port_name;
-                      return (
-                        <div key={idx} className="p-2 bg-white border border-slate-100 rounded-lg space-y-1">
-                          <div className="flex justify-between items-start">
-                            <p className="font-bold text-[9px] text-slate-900 truncate">{displayName}</p>
-                            <span className="text-[8px] font-bold text-purple-600 whitespace-nowrap ml-1">₹{(row.stock_value / 1000000).toFixed(1)}M</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1 text-[8px]">
-                            <span className="text-slate-600">Stock: <span className="font-bold">{Number(row.physical_stock).toFixed(0)}</span></span>
-                            <span className="text-slate-600">Days: <span className="font-bold">{Number(row.inventory_days || 0).toFixed(1)}</span></span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1 text-[8px]">
-                            <span className="text-slate-600">Cost: <span className="font-bold">₹{Number(row.cost_price_inr).toFixed(0)}/MT</span></span>
-                            <span className="text-slate-600">Sell: <span className="font-bold">₹{Number(row.average_selling_price_inr).toFixed(0)}/MT</span></span>
-                          </div>
-                          {row.delta_physical_stock !== null && (
-                            <span className={`text-[8px] font-semibold ${row.delta_physical_stock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              Δ {row.delta_physical_stock >= 0 ? '+' : ''}{Number(row.delta_physical_stock).toFixed(0)}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
+                <div className="text-center py-8 text-[11px] text-slate-400">Click on a tab above to view details</div>
               </div>
             </div>
           </div>
@@ -586,6 +535,148 @@ function App() {
               </p>
               <button
                 onClick={() => setInventoryModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Modal */}
+      {summaryModalOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col border border-slate-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+              <div className="flex items-center gap-3 flex-1">
+                <span className="w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-md"></span>
+                <h2 className="text-lg font-bold text-slate-900">Summary Analysis</h2>
+                <div className="flex gap-1 ml-auto">
+                  {(['product', 'company', 'port'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setSummaryViewType(type)}
+                      className={`px-2 py-1 text-[8px] font-bold uppercase rounded transition-all ${
+                        summaryViewType === type
+                          ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {type === 'product' ? '📦 Product' : type === 'company' ? '🏢 Company' : '⛴️ Port'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setSummaryModalOpen(false)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all"
+                title="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              <div className="p-4 space-y-1.5">
+                {loadingSummaryView ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <div className="inline-block text-3xl mb-3">⏳</div>
+                    <p className="font-medium">Loading summary data...</p>
+                  </div>
+                ) : summaryViewData.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <div className="inline-block text-3xl mb-3">📭</div>
+                    <p className="font-medium">No summary data available</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {summaryViewData.map((row, idx) => {
+                      const displayName = 
+                        summaryViewType === 'product' ? row.product_name :
+                        summaryViewType === 'company' ? row.company_name :
+                        row.port_name;
+                      const entityCount = 
+                        summaryViewType === 'product' ? row.vessel_count :
+                        summaryViewType === 'company' ? row.product_count :
+                        row.port_count;
+                      return (
+                        <div key={idx} className="p-2.5 bg-gradient-to-r from-slate-50 to-emerald-50 border border-slate-200 rounded-lg hover:border-emerald-300 transition-all">
+                          {/* Header */}
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-xs text-slate-900 truncate">{displayName}</p>
+                              <p className="text-[10px] text-slate-600">
+                                {summaryViewType === 'product' ? `${entityCount} vessels` : summaryViewType === 'company' ? `${entityCount} products` : `${entityCount} ports`}
+                              </p>
+                            </div>
+                            <div className="ml-2 text-right">
+                              <p className="text-[10px] font-bold text-emerald-600">Stock Value</p>
+                              <p className="text-xs font-bold text-emerald-700">₹{(Number(row.stock_value || 0) / 1000000).toFixed(1)}M</p>
+                            </div>
+                          </div>
+
+                          {/* All Fields Grid - Compact */}
+                          <div className="grid grid-cols-7 gap-1.5 text-[10px]">
+                            {/* Col 1 - Physical Stock */}
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">Physical Stock</p>
+                              <p className="font-bold text-slate-900 text-[10px]">{Number(row.physical_stock || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            </div>
+
+                            {/* Col 2 - Quantities */}
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">Unsold Qty</p>
+                              <p className="font-bold text-slate-900 text-[10px]">{Number(row.unsold_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            </div>
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">Sold Pending</p>
+                              <p className="font-bold text-slate-900 text-[10px]">{Number(row.sold_qty_pending_lifting || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            </div>
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">OTR Qty</p>
+                              <p className="font-bold text-slate-900 text-[10px]">{Number(row.otr_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            </div>
+
+                            {/* Col 3 - Weighted Metrics */}
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">Inv. Days (W.Avg)</p>
+                              <p className="font-bold text-slate-900 text-[10px]">{Number(row.inventory_days || 0).toFixed(1)}</p>
+                            </div>
+
+                            {/* Col 4 - Weighted Pricing */}
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">Cost/MT (W.Avg)</p>
+                              <p className="font-bold text-slate-900 text-[10px]">₹{Number(row.cost_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            </div>
+                            <div className="bg-white rounded p-1.5 border border-slate-100">
+                              <p className="text-slate-500 font-semibold text-[9px]">Sell/MT (W.Avg)</p>
+                              <p className="font-bold text-slate-900 text-[10px]">₹{Number(row.average_selling_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            </div>
+                            <div className={`bg-white rounded p-1.5 border ${Number(row.margin_per_mt_inr || 0) >= 0 ? 'border-emerald-200' : 'border-rose-200'}`}>
+                              <p className="text-slate-500 font-semibold text-[9px]">Margin/MT</p>
+                              <p className={`font-bold text-[10px] ${Number(row.margin_per_mt_inr || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                ₹{Number(row.margin_per_mt_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <p className="text-xs text-slate-600">
+                Showing <span className="font-bold text-slate-900">{summaryViewData.length}</span> {summaryViewType} records by weighted averages (physical stock as weight)
+              </p>
+              <button
+                onClick={() => setSummaryModalOpen(false)}
                 className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all"
               >
                 Close
