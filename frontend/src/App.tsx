@@ -306,14 +306,14 @@ function App() {
       )}
 
       {/* Premium Header */}
-      <header className="h-16 bg-white/80 backdrop-blur-sm border-b border-slate-200/40 px-6 flex justify-between items-center shrink-0 shadow-sm z-20">
-        <div className="flex items-center gap-3">
+      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200/40 px-6 flex justify-between items-center pt-1.5 pb-1.5 shrink-0 shadow-sm z-20">
+        <div className="flex items-center gap-2">
           <div className="w-9 h-9 bg-gradient-to-br from-purple-300 to-purple-400 rounded-xl flex items-center justify-center border border-purple-200/60 shadow-md">
             <Package className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
-          <div>
-            <h1 className="text-[28px] font- text-violet-600 font-large ">Sumairo Inventory Console</h1>
-            <p className="text-[11px] text-slate-500 font-medium">Automated inventory intelligence & optimization</p>
+          <div className="leading-none">
+            <h1 className="text-[24px] text-violet-600 font-bold">Sumairo Inventory Console</h1>
+            <p className="text-[9px] text-slate-500 font-medium mt-0.5">Automated inventory intelligence & optimization</p>
           </div>
         </div>
 
