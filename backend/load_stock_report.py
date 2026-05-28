@@ -30,6 +30,12 @@ if str(repo_root) not in sys.path:
 os.environ.setdefault("USE_SQLITE", "true")
 
 from backend.database import Base, Commodity, InventoryDetail, get_engine
+from backend.ingestion_feedback import (
+    validate_schema,
+    create_commodity_match_feedback,
+    create_ingestion_feedback,
+    IngestionFeedback,
+)
 
 
 BASE_COLUMNS = [
@@ -179,19 +185,54 @@ def upsert_stock_row(
     source_file_name: str,
     commodity_name_map: dict[str, str],
 ) -> str:
+    """
+    Upsert stock row using comprehensive uniqueness key.
+    
+    Uniqueness Key includes ALL fields:
+    - Identifiers: date, vessel_name, product_name, port_name, company_terminal_name, company_name, vessel_date
+    - Quantities: unsold_qty, sold_qty_pending_lifting, physical_stock, otr_qty
+    - Pricing: cost_price_INR, average_selling_price_INR
+    - Metrics: no_of_days_of_stock
+    
+    This means:
+    - Same vessel with DIFFERENT quantities → INSERT new record
+    - Same vessel with SAME quantities → No change (skip/deduplicate)
+    - New vessel → INSERT
+    """
     vessel_date = to_date(row["vessel_date"])
     inventory_days = (report_date - vessel_date).days if vessel_date else None
     product_name_raw = row["product_name"]
     normalized_name = normalize_product_name(product_name_raw)
     canonical_product_name = commodity_name_map.get(normalized_name, product_name_raw)
 
+    # Prepare all payload values for comparison
+    unsold_qty = to_float(row["unsold_qty"])
+    sold_qty_pending_lifting = to_float(row["sold_qty_pending_lifting"])
+    physical_stock = to_float(row["physical_stock"])
+    otr_qty = to_float(row["otr_qty"])
+    cost_price_INR = to_float(row["cost_price_INR"])
+    average_selling_price_INR = to_float(row["average_selling_price_INR"])
+
+    # Extended uniqueness key: include ALL fields to detect exact duplicates
     key_query = select(InventoryDetail).where(
+        # Identifiers & dates
         InventoryDetail.date == report_date,
-        InventoryDetail.vessel_name == row["vessel_name"],
+        InventoryDetail.vessel_name == (row["vessel_name"] or None),
+        InventoryDetail.vessel_date == vessel_date,
         InventoryDetail.product_name == canonical_product_name,
-        InventoryDetail.port_name == row["port_name"],
-        InventoryDetail.company_terminal_name == row["company_terminal_name"],
-        InventoryDetail.company_name == row["company_name"],
+        InventoryDetail.port_name == (row["port_name"] or None),
+        InventoryDetail.company_terminal_name == (row["company_terminal_name"] or None),
+        InventoryDetail.company_name == (row["company_name"] or None),
+        # Quantities (all must match)
+        InventoryDetail.unsold_qty == unsold_qty,
+        InventoryDetail.sold_qty_pending_lifting == sold_qty_pending_lifting,
+        InventoryDetail.physical_stock == physical_stock,
+        InventoryDetail.otr_qty == otr_qty,
+        # Pricing (all must match)
+        InventoryDetail.cost_price_INR == cost_price_INR,
+        InventoryDetail.average_selling_price_INR == average_selling_price_INR,
+        # Metrics
+        InventoryDetail.no_of_days_of_stock == inventory_days,
     )
     existing = session.execute(key_query).scalar_one_or_none()
 
@@ -203,71 +244,150 @@ def upsert_stock_row(
         "port_name": row["port_name"] or None,
         "company_terminal_name": row["company_terminal_name"] or None,
         "company_name": row["company_name"] or None,
-        "unsold_qty": to_float(row["unsold_qty"]),
-        "sold_qty_pending_lifting": to_float(row["sold_qty_pending_lifting"]),
-        "physical_stock": to_float(row["physical_stock"]),
-        "otr_qty": to_float(row["otr_qty"]),
-        "cost_price_INR": to_float(row["cost_price_INR"]),
-        "average_selling_price_INR": to_float(row["average_selling_price_INR"]),
+        "unsold_qty": unsold_qty,
+        "sold_qty_pending_lifting": sold_qty_pending_lifting,
+        "physical_stock": physical_stock,
+        "otr_qty": otr_qty,
+        "cost_price_INR": cost_price_INR,
+        "average_selling_price_INR": average_selling_price_INR,
         "no_of_days_of_stock": inventory_days,
     }
 
     if existing:
-        for field, value in payload.items():
-            setattr(existing, field, value)
-        session.add(existing)
+        # Record exists with all identical values - skip (treated as "updated" in feedback)
         return "updated"
 
+    # New record (different vessel/quantities/pricing or first time)
     session.add(InventoryDetail(**payload))
     return "inserted"
 
 
-def load_stock_report(path: str) -> dict:
-    report_date, df = read_stock_report(path)
-
-    engine = get_engine()
-    Base.metadata.create_all(engine)
-    ensure_inventory_detail_columns(engine)
-
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
-    inserted = 0
-    updated = 0
-    failed = 0
-
+def load_stock_report(path: str) -> IngestionFeedback:
+    """
+    Load stock report CSV and upsert into inventory_detail table.
+    
+    Returns:
+        IngestionFeedback with detailed feedback including schema validation,
+        commodity matching, and row counts.
+    """
     try:
-        commodity_name_map = build_commodity_name_map(session)
-
-        for _, row in df.iterrows():
-            try:
-                action = upsert_stock_row(
-                    session,
-                    report_date,
-                    row,
-                    Path(path).name,
-                    commodity_name_map,
-                )
-                if action == "inserted":
-                    inserted += 1
-                else:
-                    updated += 1
-            except Exception:
-                failed += 1
-
-        session.commit()
-        return {
-            "report_date": report_date.isoformat(),
-            "inserted": inserted,
-            "updated": updated,
-            "failed": failed,
-            "source_file": Path(path).name,
-        }
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+        # Read and validate report
+        report_date, df = read_stock_report(path)
+        
+        # Validate schema
+        expected_columns = BASE_COLUMNS + list(OPTIONAL_COLUMN_ALIASES.keys())
+        schema_validation = validate_schema(
+            expected_columns=expected_columns,
+            actual_columns=list(df.columns),
+            column_aliases=OPTIONAL_COLUMN_ALIASES,
+        )
+        
+        # Database setup
+        engine = get_engine()
+        Base.metadata.create_all(engine)
+        ensure_inventory_detail_columns(engine)
+        
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        inserted = 0
+        updated = 0
+        failed = 0
+        errors = []
+        unmatched_products = []
+        commodity_matches = 0
+        
+        try:
+            # Get commodity mapping
+            commodity_name_map = build_commodity_name_map(session)
+            
+            # Process each row
+            for idx, (_, row) in enumerate(df.iterrows()):
+                try:
+                    product_name_raw = row["product_name"]
+                    normalized_name = normalize_product_name(product_name_raw)
+                    
+                    # Track commodity matches
+                    if normalized_name in commodity_name_map:
+                        commodity_matches += 1
+                    else:
+                        unmatched_products.append(product_name_raw)
+                    
+                    action = upsert_stock_row(
+                        session,
+                        report_date,
+                        row,
+                        Path(path).name,
+                        commodity_name_map,
+                    )
+                    if action == "inserted":
+                        inserted += 1
+                    else:
+                        updated += 1
+                except Exception as e:
+                    failed += 1
+                    error_msg = f"Row {idx + 2}: {str(e)}"  # +2 for header + 0-index
+                    errors.append(error_msg)
+            
+            session.commit()
+            
+            # Create commodity match feedback
+            commodity_match = create_commodity_match_feedback(
+                total_rows=len(df),
+                matched_count=commodity_matches,
+                unmatched_products=unmatched_products,
+            )
+            
+            # Determine status
+            total_rows = len(df)
+            if failed == 0:
+                status = "success"
+                message = f"✅ Successfully loaded {total_rows} stock records"
+            elif inserted + updated > 0:
+                status = "partial_success"
+                message = f"⚠️ Partially loaded: {inserted + updated}/{total_rows} rows succeeded"
+            else:
+                status = "failed"
+                message = f"❌ Failed to load stock report: all {total_rows} rows failed"
+            
+            return create_ingestion_feedback(
+                status=status,
+                message=message,
+                total_rows=total_rows,
+                inserted=inserted,
+                updated=updated,
+                failed=failed,
+                commodity_match=commodity_match,
+                schema_validation=schema_validation,
+                errors=errors,
+                report_date=report_date.isoformat(),
+                source_file=Path(path).name,
+                destination_table="inventory_detail",
+            )
+        
+        except Exception as e:
+            session.rollback()
+            return create_ingestion_feedback(
+                status="failed",
+                message=f"❌ Database error: {str(e)}",
+                total_rows=len(df),
+                errors=[str(e)],
+                report_date=report_date.isoformat(),
+                source_file=Path(path).name,
+                destination_table="inventory_detail",
+            )
+        finally:
+            session.close()
+    
+    except Exception as e:
+        return create_ingestion_feedback(
+            status="failed",
+            message=f"❌ Failed to read stock report: {str(e)}",
+            total_rows=0,
+            errors=[str(e)],
+            source_file=Path(path).name,
+            destination_table="inventory_detail",
+        )
 
 
 if __name__ == "__main__":

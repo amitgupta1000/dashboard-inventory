@@ -305,8 +305,13 @@ class InventoryDetail(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("date", "vessel_name", "product_name", "company_terminal_name", "company_name", "port_name", 
-                        name="uq_inventory_detail_record"),
+        UniqueConstraint(
+            "date", "vessel_name", "vessel_date", "product_name", "port_name",
+            "company_terminal_name", "company_name",
+            "unsold_qty", "sold_qty_pending_lifting", "physical_stock", "otr_qty",
+            "cost_price_INR", "average_selling_price_INR", "no_of_days_of_stock",
+            name="uq_inventory_detail_complete_record"
+        ),
     )
 
 

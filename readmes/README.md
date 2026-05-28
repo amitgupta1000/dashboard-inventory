@@ -749,7 +749,127 @@ python backend/load_stock_report.py
 
 ---
 
-## 📝 Key Implementation Details
+## � Ingestion Feedback System
+
+All data loaders provide comprehensive user feedback with detailed status information.
+
+### **Feedback Metrics**
+
+Each ingestion returns detailed metrics:
+
+```json
+{
+  "status": "success|partial_success|failed",
+  "message": "Human-readable message",
+  "total_rows": 60,
+  "rows_inserted": 45,
+  "rows_updated": 15,
+  "rows_failed": 0,
+  "report_date": "2026-05-22",
+  "source_file": "DAILY PRICE REPORT 22-05-2026.xlsx",
+  "destination_table": "market_data_hvb",
+  
+  "commodity_match": {
+    "total_rows": 60,
+    "matched_commodities": 58,
+    "unmatched_commodities": 2,
+    "match_percentage": 96.7,
+    "unmatched_samples": ["Unknown Product", "Invalid Name"]
+  },
+  
+  "schema_validation": {
+    "expected_columns": 16,
+    "matched_columns": 16,
+    "missing_columns": [],
+    "unrecognized_columns": [],
+    "match_percentage": 100.0
+  },
+  
+  "error_messages": [
+    "Row 25: Invalid date format",
+    "Row 47: Missing required field"
+  ]
+}
+```
+
+### **Key Feedback Components**
+
+#### **Status Codes**
+- `success`: All rows processed without errors
+- `partial_success`: Some rows succeeded, some failed (non-critical)
+- `failed`: Critical error - all or most rows failed
+
+#### **Row Metrics**
+- `total_rows`: Total rows in file
+- `rows_inserted`: New records created
+- `rows_updated`: Existing records modified
+- `rows_failed`: Failed to process
+
+#### **Commodity Matching** (Stock Report)
+- **matched_commodities**: Products found in commodity master
+- **unmatched_commodities**: Products NOT in database (potential issues)
+- **match_percentage**: % of rows with valid commodity match
+- **unmatched_samples**: First 5 unmatched product names for debugging
+
+**Why It Matters**: Helps identify missing master data or misspelled product names in source files.
+
+#### **Schema Validation**
+- **expected_columns**: Columns required for parsing
+- **matched_columns**: Columns successfully found in file
+- **missing_columns**: Required columns not found (parsing may fail)
+- **unrecognized_columns**: Extra columns in file (usually ignored)
+- **match_percentage**: % of expected columns found
+
+**Why It Matters**: Detects column name variations (e.g., "Cost_Price" vs "CostPrice" vs "cost_price_mt_inr") that could cause parsing failures in future uploads. Allows detecting schema drift.
+
+#### **Error Messages**
+- First 10 errors recorded (row number + specific error)
+- Helps debug problematic rows without processing entire file
+- Examples: invalid date format, type conversion failures, constraint violations
+
+### **Using Feedback in Frontend**
+
+The upload response includes complete feedback:
+
+```typescript
+// Example in UploadPanel.tsx
+const response = await axios.post('/api/uploads/inventory', formData);
+const feedback = response.data.ingestion;
+
+// Display status
+console.log(`Status: ${feedback.status}`);
+console.log(`Message: ${feedback.message}`);
+
+// Show metrics
+console.log(`Inserted: ${feedback.rows_inserted}`);
+console.log(`Updated: ${feedback.rows_updated}`);
+console.log(`Failed: ${feedback.rows_failed}`);
+
+// Warn about unmatched commodities
+if (feedback.commodity_match.unmatched_commodities > 0) {
+  console.warn(
+    `⚠️ ${feedback.commodity_match.unmatched_commodities} products not found in master data:`,
+    feedback.commodity_match.unmatched_samples
+  );
+}
+
+// Alert on schema issues
+if (feedback.schema_validation.missing_columns.length > 0) {
+  console.warn(
+    `⚠️ Missing expected columns:`,
+    feedback.schema_validation.missing_columns
+  );
+}
+
+// Display errors
+if (feedback.error_messages.length > 0) {
+  console.error('First 10 errors:', feedback.error_messages);
+}
+```
+
+---
+
+## �📝 Key Implementation Details
 
 ### **Async/Await Pattern**
 - All database operations use `async` functions with SQLAlchemy's async engine
@@ -777,6 +897,74 @@ python backend/load_stock_report.py
 1. Exact case-insensitive match (avoids "TOLUENE" vs "TOLUENE TDI" collisions)
 2. Fuzzy matching fallback (70%+ similarity)
 3. Normalization: uppercase + trim + collapse spaces
+
+### **Vessel Data Deduplication (Comprehensive Uniqueness Key)**
+
+For daily vessel stock uploads, the system uses an **expanded composite key** to determine uniqueness:
+
+#### **Uniqueness Key Fields**
+```
+(date, vessel_name, vessel_date, product_name, port_name, 
+ company_terminal_name, company_name,
+ unsold_qty, sold_qty_pending_lifting, physical_stock, otr_qty,
+ cost_price_INR, average_selling_price_INR, no_of_days_of_stock)
+```
+
+#### **Behavior**
+
+| Scenario | Action | Result |
+|----------|--------|--------|
+| Same vessel, SAME quantities on same day | Skip duplicate | No new row |
+| Same vessel, DIFFERENT quantities on same day | Insert new row | Time-series tracking |
+| Same vessel, any data on DIFFERENT day | Insert new row | Historical record |
+| New vessel | Insert | New record |
+
+#### **Example: Daily Upload Pattern**
+
+```
+May 22 Upload (morning):
+├─ Vessel Alpha, 100 MT → INSERT
+├─ Vessel Beta, 200 MT → INSERT
+└─ Total: 2 rows inserted, 0 updated
+
+May 22 Upload (reupload same file):
+├─ Vessel Alpha, 100 MT → SKIP (exact duplicate)
+├─ Vessel Beta, 200 MT → SKIP (exact duplicate)
+└─ Total: 0 rows inserted, 2 duplicates skipped
+└─ Feedback: rows_inserted=0, rows_updated=2, rows_failed=0
+
+May 22 Upload (corrected quantities):
+├─ Vessel Alpha, 120 MT → INSERT (different qty)
+├─ Vessel Beta, 200 MT → SKIP (same)
+└─ Total: 1 row inserted, 1 skipped
+└─ DB now has 3 rows for May 22 (2 original, 1 updated)
+
+May 23 Upload:
+├─ Vessel Alpha, 90 MT → INSERT (different day)
+├─ Vessel Beta, 180 MT → INSERT (different day)
+└─ Total: 2 new rows for May 23
+└─ DB now has 7 total rows (5 for May 22-23 historical data)
+```
+
+#### **Why This Matters**
+
+✅ **Prevents accidental duplicates**: Re-uploading same file creates no duplicates
+✅ **Tracks inventory changes**: Different quantities create new records (audit trail)
+✅ **Supports corrections**: Corrected quantities inserted as new records
+✅ **Historical accuracy**: Full time-series of all snapshots preserved
+
+#### **Database Migration**
+
+If upgrading from the old narrow key to this expanded key:
+
+```bash
+# PostgreSQL
+python backend/migrate_expand_inventory_key.py
+
+# SQLite (requires full database reset)
+rm jobs.db
+python backend/init_db.py
+```
 
 ### **Percentage Handling**
 - CSV values like "12%" converted to decimal 0.12
