@@ -1,32 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
-  Activity, RefreshCw, CheckCircle2, AlertCircle, Clock, Users,
-  DollarSign, Award, FileText, ChevronRight, Search, Settings,
-  Sparkles, Package, TrendingUp, BarChart3, Database, Zap, Lock, X, ChevronLeft, Upload
+  Package, Sparkles, Zap, RefreshCw, Upload, X
 } from 'lucide-react';
 import './styles/animations.css';
 import UploadPanel from './components/UploadPanel';
 
 function App() {
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>(null);
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [narrative, setNarrative] = useState<any>(null);
-  const [loadingInventory, setLoadingInventory] = useState(false);
-  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [toast, setToast] = useState<any>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [formData, setFormData] = useState<any>(null);
-  const [saving, setSaving] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
-  const [asOfDate, setAsOfDate] = useState('');
-  const [backdate, setBackdate] = useState('');
-  const [availableDates, setAvailableDates] = useState<string[]>([]);
-  const [drilldownRows, setDrilldownRows] = useState<any[]>([]);
-  const [loadingDrilldown, setLoadingDrilldown] = useState(false);
-
   // Layer 1 Analytics: Tab-based exploration
   const [activeAnalyticsTab, setActiveAnalyticsTab] = useState<'inventory' | 'summary'>('inventory');
   const [summaryViewType, setSummaryViewType] = useState<'product' | 'company' | 'port'>('product');
@@ -38,130 +17,23 @@ function App() {
   const [analyticsBackdate, setAnalyticsBackdate] = useState('');
   const [analyticsAvailableDates, setAnalyticsAvailableDates] = useState<string[]>([]);
 
+  // Layer 2: Selected product details and drilldown
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [drilldownRows, setDrilldownRows] = useState<any[]>([]);
+  const [loadingDrilldown, setLoadingDrilldown] = useState(false);
+  const [narrative, setNarrative] = useState<any>(null);
+
+  // UI State
+  const [toast, setToast] = useState<any>(null);
+  const [uploadPanelOpen, setUploadPanelOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
   const API_BASE_URL = 'http://localhost:8000';
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
-
-  const buildDateQuery = () => {
-    const params = new URLSearchParams();
-    if (asOfDate) params.set('as_of', asOfDate);
-    if (backdate) params.set('backdate', backdate);
-    return params.toString();
-  };
-
-  const fetchDrilldown = async (product: any = selectedProduct, asOfParam = asOfDate, backdateParam = backdate) => {
-    if (!product?.product_name || !product?.port_name || !product?.company_name) {
-      setDrilldownRows([]);
-      return;
-    }
-
-    setLoadingDrilldown(true);
-    try {
-      const params = new URLSearchParams({
-        product_name: product.product_name,
-        port_name: product.port_name,
-        company_name: product.company_name,
-      });
-      if (asOfParam) params.set('as_of', asOfParam);
-      if (backdateParam) params.set('backdate', backdateParam);
-
-      const response = await fetch(`${API_BASE_URL}/api/stock-analytics/drilldown?${params.toString()}`);
-      const data = await response.json();
-      if (data.success) {
-        setDrilldownRows(data.data || []);
-      }
-    } catch (e) {
-      console.error(e);
-      setDrilldownRows([]);
-    } finally {
-      setLoadingDrilldown(false);
-    }
-  };
-
-  const fetchInventoryData = async () => {
-    setLoadingInventory(true);
-    try {
-      const query = buildDateQuery();
-      const endpoint = query
-        ? `${API_BASE_URL}/api/stock-analytics/summary?${query}`
-        : `${API_BASE_URL}/api/stock-analytics/summary`;
-
-      const invRes = await fetch(endpoint);
-      const invData = await invRes.json();
-      
-      if (invData.success) {
-        const rows = invData.data || [];
-        setInventory(rows);
-        setSummary(invData.summary || null);
-        setAvailableDates(invData.available_dates || []);
-
-        if (invData.as_of_date && !asOfDate) setAsOfDate(invData.as_of_date);
-        if (invData.backdate && !backdate) setBackdate(invData.backdate);
-
-        if (rows.length > 0) {
-          const nextSelected = selectedProduct
-            ? rows.find((r: any) =>
-                r.product_name === selectedProduct.product_name
-                && r.port_name === selectedProduct.port_name
-                && r.company_name === selectedProduct.company_name
-              ) || rows[0]
-            : rows[0];
-
-          setSelectedProduct(nextSelected);
-          initializeForm(nextSelected);
-          await fetchDrilldown(nextSelected, invData.as_of_date || asOfDate, invData.backdate || backdate);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      showToast('Failed to load inventory', 'error');
-    } finally {
-      setLoadingInventory(false);
-    }
-  };
-
-  const fetchAnalyticsData = async () => {
-    setLoadingAnalytics(true);
-    try {
-      const query = buildDateQuery();
-      const alertsUrl = query
-        ? `${API_BASE_URL}/api/intelligence/alerts?${query}`
-        : `${API_BASE_URL}/api/intelligence/alerts`;
-      const narrativeUrl = query
-        ? `${API_BASE_URL}/api/intelligence/narrative?${query}`
-        : `${API_BASE_URL}/api/intelligence/narrative`;
-
-      const [alertsRes, narrativeRes] = await Promise.all([
-        fetch(alertsUrl),
-        fetch(narrativeUrl)
-      ]);
-      
-      const alertsData = await alertsRes.json();
-      const narrativeData = await narrativeRes.json();
-      
-      if (alertsData.success) {
-        setAlerts(alertsData.data.slice(0, 6)); // Top 6 alerts
-      }
-      
-      if (narrativeData.success) {
-        setNarrative(narrativeData.data);
-      }
-    } catch (e) {
-      console.error(e);
-      showToast('Failed to load analytics', 'error');
-    } finally {
-      setLoadingAnalytics(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchInventoryData();
-    fetchAnalyticsData();
-    fetchAnalyticsLayerDates();
-  }, []);
 
   const fetchAnalyticsLayerDates = async () => {
     try {
@@ -224,6 +96,39 @@ function App() {
     }
   };
 
+  const fetchDrilldown = async (product: any = selectedProduct, asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+    if (!product?.product_name || !product?.port_name || !product?.company_name) {
+      setDrilldownRows([]);
+      return;
+    }
+
+    setLoadingDrilldown(true);
+    try {
+      const params = new URLSearchParams({
+        product_name: product.product_name,
+        port_name: product.port_name,
+        company_name: product.company_name,
+      });
+      if (asOfParam) params.set('as_of', asOfParam);
+      if (backdateParam) params.set('backdate', backdateParam);
+
+      const response = await fetch(`${API_BASE_URL}/api/stock-analytics/drilldown?${params.toString()}`);
+      const data = await response.json();
+      if (data.success) {
+        setDrilldownRows(data.data || []);
+      }
+    } catch (e) {
+      console.error(e);
+      setDrilldownRows([]);
+    } finally {
+      setLoadingDrilldown(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalyticsLayerDates();
+  }, []);
+
   useEffect(() => {
     if (activeAnalyticsTab === 'inventory') {
       fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
@@ -232,64 +137,6 @@ function App() {
     }
   }, [activeAnalyticsTab, summaryViewType, analyticsAsOfDate, analyticsBackdate]);
 
-  const initializeForm = (product: any) => {
-    setFormData({
-      product_name: product.product_name,
-      market_price: product.average_selling_price_inr || 0,
-      replacement_cost: product.cost_price_inr || 0,
-      duty_tariff_percent: 0,
-      safety_stock_qty: 0,
-      reorder_point_qty: 0,
-      desired_inventory_days: 30,
-      target_monthly_sales_volume: 0,
-    });
-  };
-
-  const handleSaveSettings = async () => {
-    if (!formData) return;
-    setSaving(true);
-    try {
-      await fetch(`${API_BASE_URL}/api/product-settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      showToast('Settings saved successfully!');
-    } catch (e) {
-      console.error(e);
-      showToast('Failed to save settings', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([fetchInventoryData(), fetchAnalyticsData()]);
-    showToast('Dashboard synced');
-    setRefreshing(false);
-  };
-
-  const filteredInventory = inventory.filter((item: any) =>
-    (item.product_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (item.port_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (item.company_name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const getAlertColor = (type: string) => {
-    switch (type?.toLowerCase()) {
-      case 'critical':
-      case 'shortage':
-        return { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', icon: AlertCircle };
-      case 'warning':
-      case 'aging':
-        return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: Clock };
-      case 'excess':
-        return { bg: 'bg-sky-50', border: 'border-sky-200', text: 'text-sky-700', icon: TrendingUp };
-      default:
-        return { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', icon: CheckCircle2 };
-    }
-  };
 
 
 
@@ -311,41 +158,22 @@ function App() {
           <div className="w-9 h-9 bg-gradient-to-br from-purple-300 to-purple-400 rounded-xl flex items-center justify-center border border-purple-200/60 shadow-md">
             <Package className="w-5 h-5 text-white" strokeWidth={2.5} />
           </div>
-          <div className="leading-none">
-            <h1 className="text-[24px] text-violet-600 font-bold">Sumairo Inventory Console</h1>
-            <p className="text-[9px] text-slate-500 font-medium mt-0.5">Automated inventory intelligence & optimization</p>
+          <div className="leading-tight">
+            <h1 className="text-[24px] text-violet-600 font-bold">
+              Sumairo Inventory Console
+              <br />
+              <span className="text-[16px] text-slate-500 font-medium">Automated inventory intelligence & optimization</span>
+            </h1>
           </div>
         </div>
 
         {/* Global Stats */}
         <div className="hidden md:flex items-center gap-5 text-xs border-l border-slate-200/40 pl-6 h-8">
-          {summary && (
-            <>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">INVENTORY:</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-purple-100 to-purple-50 border border-purple-200/60 text-purple-700 font-bold text-[10px]">
-                  {summary.total_products}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">VALUE:</span>
-                <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-emerald-100 to-emerald-50 border border-emerald-200/60 text-emerald-700 font-bold text-[10px]">
-                  ₹{(summary.total_stock_value / 1000000).toFixed(1)}M
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">ALERTS:</span>
-                <span className={`px-2.5 py-0.5 rounded-full font-bold text-[10px] border ${alerts.length > 0 ? 'bg-gradient-to-r from-rose-100 to-rose-50 border-rose-200/60 text-rose-700' : 'bg-gradient-to-r from-emerald-100 to-emerald-50 border-emerald-200/60 text-emerald-700'}`}>
-                  {alerts.length}
-                </span>
-              </div>
-            </>
-          )}
-
           <button 
-            onClick={handleRefresh}
+            onClick={() => {
+              setRefreshing(true);
+              fetchAnalyticsLayerDates().then(() => setRefreshing(false));
+            }}
             disabled={refreshing}
             className="p-1.5 rounded-lg border border-slate-200/40 hover:bg-slate-100/50 text-slate-500 hover:text-slate-600 shrink-0 transition-all"
           >
@@ -404,11 +232,11 @@ function App() {
               <div className="space-y-0.5">
                 <label className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">As Of</label>
                 <select
-                  value={asOfDate}
-                  onChange={(e) => setAsOfDate(e.target.value)}
+                  value={analyticsAsOfDate}
+                  onChange={(e) => setAnalyticsAsOfDate(e.target.value)}
                   className="w-full text-[9px] px-1.5 py-0.5 rounded-md border border-slate-200 bg-white"
                 >
-                  {(availableDates || []).map((d) => (
+                  {(analyticsAvailableDates || []).map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -416,12 +244,12 @@ function App() {
               <div className="space-y-0.5">
                 <label className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Compare To</label>
                 <select
-                  value={backdate}
-                  onChange={(e) => setBackdate(e.target.value)}
+                  value={analyticsBackdate}
+                  onChange={(e) => setAnalyticsBackdate(e.target.value)}
                   className="w-full text-[9px] px-1.5 py-0.5 rounded-md border border-slate-200 bg-white"
                 >
                   <option value="">None</option>
-                  {(availableDates || []).filter((d) => d !== asOfDate).map((d) => (
+                  {(analyticsAvailableDates || []).filter((d) => d !== analyticsAsOfDate).map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -659,7 +487,7 @@ function App() {
 
             {/* Footer Action Button */}
             <button 
-              onClick={fetchAnalyticsData}
+              onClick={() => showToast('Intelligence insights coming in Layer 2', 'success')}
               className="shrink-0 w-full mt-4 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-all border border-emerald-400/30"
             >
               <Zap className="w-4 h-4" />
