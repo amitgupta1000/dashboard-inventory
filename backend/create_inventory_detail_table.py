@@ -38,6 +38,7 @@ def create_inventory_detail_table():
     print("Creating inventory_detail table with expanded uniqueness constraint...")
     print("-" * 70)
     
+    # Phase 1: Check and drop/backup existing table
     with engine.begin() as connection:
         inspector = inspect(connection)
         
@@ -54,18 +55,22 @@ def create_inventory_detail_table():
                 print(f"   ✅ Backed up to: {backup_name}")
             else:
                 print("   PostgreSQL: Dropping existing table...")
-                connection.execute(text("DROP TABLE IF EXISTS inventory_detail"))
+                connection.execute(text("DROP TABLE IF EXISTS inventory_detail CASCADE"))
                 print("   ✅ Table dropped")
-        
-        # Create table with expanded unique constraint
-        print("\nCreating new inventory_detail table...")
-        
-        # Use SQLAlchemy ORM to create table
-        InventoryDetail.__table__.create(engine, checkfirst=False)
-        
+    
+    # Phase 2: Create new table (in separate transaction for clean state)
+    print("\nCreating new inventory_detail table...")
+    
+    try:
+        # Use SQLAlchemy ORM to create table with checkfirst=True
+        InventoryDetail.__table__.create(engine, checkfirst=True)
         print("✅ Table created successfully")
-        
-        # Verify the constraint
+    except Exception as e:
+        print(f"❌ Error creating table: {e}")
+        raise
+    
+    # Phase 3: Verify the constraint
+    with engine.begin() as connection:
         inspector = inspect(connection)
         constraints = inspector.get_unique_constraints("inventory_detail")
         
