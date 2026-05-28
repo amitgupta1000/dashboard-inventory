@@ -76,10 +76,10 @@ def download_file(gcs_path: str) -> bytes:
 def upload_inventory_file(file_bytes: bytes, original_filename: str) -> str:
     """
     Upload inventory data file to GCS.
-    Stores in: uploads/daily_stock_report_{timestamp}.csv
+    Stores in: uploads/inventory/daily_stock_report_{timestamp}.csv
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    gcs_path = f"{UPLOAD_PREFIX}daily_stock_report_{timestamp}.csv"
+    gcs_path = f"{UPLOAD_PREFIX}inventory/daily_stock_report_{timestamp}.csv"
 
     client = _client()
     bucket = client.bucket(BUCKET_NAME)
@@ -91,10 +91,10 @@ def upload_inventory_file(file_bytes: bytes, original_filename: str) -> str:
 def upload_prices_file(file_bytes: bytes, original_filename: str) -> str:
     """
     Upload market prices data file to GCS.
-    Stores in: uploads/daily_price_update_{timestamp}.csv
+    Stores in: uploads/prices/daily_price_update_{timestamp}.csv
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    gcs_path = f"{UPLOAD_PREFIX}daily_price_update_{timestamp}.csv"
+    gcs_path = f"{UPLOAD_PREFIX}prices/daily_price_update_{timestamp}.csv"
 
     client = _client()
     bucket = client.bucket(BUCKET_NAME)
@@ -106,10 +106,10 @@ def upload_prices_file(file_bytes: bytes, original_filename: str) -> str:
 def upload_sales_register_file(file_bytes: bytes, original_filename: str) -> str:
     """
     Upload sales register data file to GCS.
-    Stores in: uploads/daily_sales_register_{timestamp}.csv
+    Stores in: uploads/sales/daily_sales_register_{timestamp}.csv
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    gcs_path = f"{UPLOAD_PREFIX}daily_sales_register_{timestamp}.csv"
+    gcs_path = f"{UPLOAD_PREFIX}sales/daily_sales_register_{timestamp}.csv"
 
     client = _client()
     bucket = client.bucket(BUCKET_NAME)
@@ -119,17 +119,18 @@ def upload_sales_register_file(file_bytes: bytes, original_filename: str) -> str
 
 
 def list_inventory_files() -> list[dict]:
-    """Return all inventory report files in uploads/ prefix."""
+    """Return all inventory report files in uploads/inventory/ prefix."""
+    inventory_prefix = f"{UPLOAD_PREFIX}inventory/"
     client = _client()
     bucket = client.bucket(BUCKET_NAME)
-    blobs = client.list_blobs(bucket, prefix=UPLOAD_PREFIX)
+    blobs = client.list_blobs(bucket, prefix=inventory_prefix)
 
     files = []
     for blob in blobs:
-        if blob.name == UPLOAD_PREFIX:
+        if blob.name == inventory_prefix:
             continue
 
-        filename = blob.name.removeprefix(UPLOAD_PREFIX)
+        filename = blob.name.removeprefix(inventory_prefix)
         # New naming convention for inventory report uploads.
         if not filename.startswith("daily_stock_report_"):
             continue
@@ -145,17 +146,18 @@ def list_inventory_files() -> list[dict]:
 
 
 def list_prices_files() -> list[dict]:
-    """Return all market price files in uploads/ prefix."""
+    """Return all market price files in uploads/prices/ prefix."""
+    prices_prefix = f"{UPLOAD_PREFIX}prices/"
     client = _client()
     bucket = client.bucket(BUCKET_NAME)
-    blobs = client.list_blobs(bucket, prefix=UPLOAD_PREFIX)
+    blobs = client.list_blobs(bucket, prefix=prices_prefix)
 
     files = []
     for blob in blobs:
-        if blob.name == UPLOAD_PREFIX:
+        if blob.name == prices_prefix:
             continue
 
-        filename = blob.name.removeprefix(UPLOAD_PREFIX)
+        filename = blob.name.removeprefix(prices_prefix)
         # New naming convention for daily price report uploads.
         if not filename.startswith("daily_price_update_"):
             continue
@@ -171,17 +173,18 @@ def list_prices_files() -> list[dict]:
 
 
 def list_sales_register_files() -> list[dict]:
-    """Return all sales register files in uploads/ prefix."""
+    """Return all sales register files in uploads/sales/ prefix."""
+    sales_prefix = f"{UPLOAD_PREFIX}sales/"
     client = _client()
     bucket = client.bucket(BUCKET_NAME)
-    blobs = client.list_blobs(bucket, prefix=UPLOAD_PREFIX)
+    blobs = client.list_blobs(bucket, prefix=sales_prefix)
 
     files = []
     for blob in blobs:
-        if blob.name == UPLOAD_PREFIX:
+        if blob.name == sales_prefix:
             continue
 
-        filename = blob.name.removeprefix(UPLOAD_PREFIX)
+        filename = blob.name.removeprefix(sales_prefix)
         # New naming convention for sales register uploads.
         if not filename.startswith("daily_sales_register_"):
             continue
