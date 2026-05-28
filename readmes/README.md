@@ -953,15 +953,29 @@ May 23 Upload:
 ✅ **Supports corrections**: Corrected quantities inserted as new records
 ✅ **Historical accuracy**: Full time-series of all snapshots preserved
 
-#### **Database Migration**
+#### **Creating Fresh Table with Expanded Key**
 
-If upgrading from the old narrow key to this expanded key:
+Use this script to create the `inventory_detail` table with the comprehensive uniqueness constraint from scratch:
 
 ```bash
-# PostgreSQL
+# Creates new table with expanded unique constraint
+# Automatically backs up existing table if present
+python backend/create_inventory_detail_table.py
+```
+
+This script:
+- Creates table with all proper constraints built in
+- Backs up existing table if present (no data loss)
+- Works with both PostgreSQL and SQLite
+- Provides verification that constraint is properly set
+
+**For existing databases:**
+
+```bash
+# PostgreSQL: Has data, use migration script to avoid recreation
 python backend/migrate_expand_inventory_key.py
 
-# SQLite (requires full database reset)
+# SQLite: Simpler to reset and recreate
 rm jobs.db
 python backend/init_db.py
 ```
@@ -985,7 +999,10 @@ dashboard-inventory/
 │   ├── load_inventory_targets.py # Load target configurations
 │   ├── load_market_data.py      # Load market pricing
 │   ├── load_stock_report.py     # Load stock reports (WIP)
-│   ├── migrate_add_target_fields.py # Database migrations
+│   ├── create_inventory_detail_table.py  # Create inventory_detail with expanded key
+│   ├── migrate_add_target_fields.py      # Database migrations
+│   ├── migrate_expand_inventory_key.py   # Expand uniqueness constraint (PostgreSQL)
+│   ├── ingestion_feedback.py    # User feedback & schema validation
 │   ├── routes/
 │   │   ├── targets.py           # Targets API (CRUD + history)
 │   │   ├── market_data.py       # Market data API
