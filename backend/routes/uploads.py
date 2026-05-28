@@ -66,25 +66,21 @@ def _infer_report_date_from_filename(file_name: str):
         return None
 
 
-def _process_uploaded_file(upload_type: str, file_path: str, original_filename: str) -> IngestionFeedback:
+def _process_uploaded_file(upload_type: str, gcs_path: str, original_filename: str) -> IngestionFeedback:
     """
-    Unified workflow: parse and upsert into destination table.
-    
-    Args:
-        upload_type: 'inventory', 'prices', or 'sales'
-        file_path: Path to file (either temp file or GCS path in production)
-        original_filename: Original filename for logging/validation
+    Unified workflow: download from GCS, parse, and upsert into destination table.
     
     Returns:
         IngestionFeedback with detailed processing results
     """
+    file_bytes = gcs.download_file(gcs_path)
     _, ext = os.path.splitext(original_filename or "")
     suffix = ext if ext else ".bin"
 
-    # In local mode, file_path is already a temp file
-    # In production, we would download from GCS first
-    tmp_path = file_path
-    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = tmp.name
+
     try:
         if upload_type == "inventory":
             if suffix.lower() not in {".csv", ".xlsx", ".xls"}:
@@ -136,12 +132,10 @@ def _process_uploaded_file(upload_type: str, file_path: str, original_filename: 
             destination_table=None,
         )
     finally:
-        # Only cleanup if it's a temp file (local mode)
-        if tmp_path.startswith(tempfile.gettempdir()):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 # ============================================================================
 # INVENTORY UPLOADS
@@ -151,8 +145,7 @@ def _process_uploaded_file(upload_type: str, file_path: str, original_filename: 
 async def upload_inventory(file: UploadFile = File(...)):
     """
     Upload inventory data file.
-    In production: stores in GCS at uploads/inventory/{timestamp}_{filename}
-    In local dev: processes directly without GCS
+    Stores in GCS at: uploads/inventory/{timestamp}_{filename}
     
     Supported formats: .xlsx, .csv
     """
@@ -181,25 +174,12 @@ async def upload_inventory(file: UploadFile = File(...)):
                 detail="File is empty"
             )
         
-        # Check if we're in local dev mode (using SQLite)
-        use_sqlite = os.getenv('USE_SQLITE', '').lower() == 'true'
+        # Upload to GCS
+        gcs_path = gcs.upload_inventory_file(file_bytes, file.filename)
         
-        if use_sqlite:
-            # Local development: save to temp file and process directly
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = tmp.name
-            
-            gcs_path = f"local://{file.filename}"
-            logger.info(f"Processing inventory file locally: {file.filename}")
-            
-            ingestion_result = _process_uploaded_file("inventory", tmp_path, file.filename)
-        else:
-            # Production: upload to GCS first
-            gcs_path = gcs.upload_inventory_file(file_bytes, file.filename)
-            logger.info(f"Inventory file uploaded: {gcs_path}")
-            
-            ingestion_result = _process_uploaded_file("inventory", gcs_path, file.filename)
+        logger.info(f"Inventory file uploaded: {gcs_path}")
+        
+        ingestion_result = _process_uploaded_file("inventory", gcs_path, file.filename)
 
         return FileUploadResponse(
             success=True,
@@ -247,8 +227,7 @@ async def list_inventory_files():
 async def upload_prices(file: UploadFile = File(...)):
     """
     Upload market prices data file.
-    In production: stores in GCS at uploads/prices/{timestamp}_{filename}
-    In local dev: processes directly without GCS
+    Stores in GCS at: uploads/prices/{timestamp}_{filename}
     
     Supported formats: .xlsx, .csv
     """
@@ -277,25 +256,12 @@ async def upload_prices(file: UploadFile = File(...)):
                 detail="File is empty"
             )
         
-        # Check if we're in local dev mode (using SQLite)
-        use_sqlite = os.getenv('USE_SQLITE', '').lower() == 'true'
+        # Upload to GCS
+        gcs_path = gcs.upload_prices_file(file_bytes, file.filename)
         
-        if use_sqlite:
-            # Local development: save to temp file and process directly
-            with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
-                tmp.write(file_bytes)
-                tmp_path = tmp.name
-            
-            gcs_path = f"local://{file.filename}"
-            logger.info(f"Processing prices file locally: {file.filename}")
-            
-            ingestion_result = _process_uploaded_file("prices", tmp_path, file.filename)
-        else:
-            # Production: upload to GCS first
-            gcs_path = gcs.upload_prices_file(file_bytes, file.filename)
-            logger.info(f"Prices file uploaded: {gcs_path}")
-            
-            ingestion_result = _process_uploaded_file("prices", gcs_path, file.filename)
+        logger.info(f"Prices file uploaded: {gcs_path}")
+        
+        ingestion_result = _process_uploaded_file("prices", gcs_path, file.filename)
 
         return FileUploadResponse(
             success=True,

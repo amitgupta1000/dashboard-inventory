@@ -8,11 +8,14 @@ load_dotenv()  # Load environment variables from .env file
 env_path = Path(__file__).parent / 'backend' / '.env'
 load_dotenv(env_path, override=True)
 
-# Now set USE_SQLITE to true for local development
+# Now set USE_SQLITE to true for local development (can override for production)
 os.environ.setdefault('USE_SQLITE', 'true')
 
-# Remove service-account key override for local development
-os.environ.pop('GOOGLE_APPLICATION_CREDENTIALS', None)
+# GCS credentials can be configured via:
+# 1. GOOGLE_APPLICATION_CREDENTIALS env var (path to service account JSON)
+# 2. gcloud CLI default credentials (from 'gcloud auth application-default login')
+# 3. Cloud Run service account (in production)
+# We do NOT remove GOOGLE_APPLICATION_CREDENTIALS - let it work if configured
 
 # Now we can safely import
 from fastapi import FastAPI, HTTPException
