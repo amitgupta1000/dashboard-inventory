@@ -370,37 +370,34 @@ function App() {
             ========================================== */}
         <section className="flex flex-col flex-[2] min-w-0 h-full bg-gradient-to-br from-white to-cyan-50/30 rounded-2xl border border-cyan-200/40 shadow-lg hover:shadow-xl transition-all duration-300 min-h-0 overflow-hidden">
           {/* Header */}
-          <div className="shrink-0 px-5 pt-5 pb-4 border-b border-cyan-100/50">
-            <div className="flex items-center gap-2.5 mb-2">
+          <div className="shrink-0 px-5 py-2 border-b border-cyan-100/50">
+            <div className="flex items-center gap-2.5">
               <span className="w-3 h-3 rounded-full bg-gradient-to-br from-cyan-400 to-cyan-500 shadow-md"></span>
               <h2 className="text-sm font-extrabold uppercase tracking-widest text-slate-900">1. Analytics & Monitor</h2>
             </div>
-            <p className="text-[11px] text-slate-600 font-medium">Track metrics and monitor inventory health status.</p>
           </div>
           
           <div className="flex-1 flex flex-col min-h-0 px-5 py-3 space-y-1">
             
-            {/* Summary Stats Grid */}
-            {summary && (
-              <div className="shrink-0 grid grid-cols-2 gap-1.5">
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
-                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Products</span>
-                  <span className="text-sm font-extrabold text-slate-900">{summary.total_products}</span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
-                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Physical Stock</span>
-                  <span className="text-sm font-extrabold text-slate-900">{(summary.total_physical_stock / 1000).toFixed(0)}K</span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
-                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Sold Qty</span>
-                  <span className="text-sm font-extrabold text-emerald-600">{(summary.total_sold_qty / 1000).toFixed(0)}K</span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2 rounded-lg">
-                  <span className="text-[7px] font-bold text-slate-400 uppercase block">Stock Value</span>
-                  <span className="text-sm font-extrabold text-purple-600">₹{(summary.total_stock_value / 10000000).toFixed(1)}Cr</span>
-                </div>
+            {/* 4 Metric Tabs - Horizontal */}
+            <div className="shrink-0 grid grid-cols-4 gap-1">
+              <div className="bg-cyan-50 border border-cyan-200/50 p-1.5 rounded-md text-center">
+                <span className="text-[7px] font-bold text-cyan-600 uppercase block">Products</span>
+                <span className="text-sm font-extrabold text-cyan-900">—</span>
               </div>
-            )}
+              <div className="bg-blue-50 border border-blue-200/50 p-1.5 rounded-md text-center">
+                <span className="text-[7px] font-bold text-blue-600 uppercase block">Physical Stock</span>
+                <span className="text-sm font-extrabold text-blue-900">—</span>
+              </div>
+              <div className="bg-purple-50 border border-purple-200/50 p-1.5 rounded-md text-center">
+                <span className="text-[7px] font-bold text-purple-600 uppercase block">Stock Value</span>
+                <span className="text-sm font-extrabold text-purple-900">—</span>
+              </div>
+              <div className="bg-emerald-50 border border-emerald-200/50 p-1.5 rounded-md text-center">
+                <span className="text-[7px] font-bold text-emerald-600 uppercase block">Inventory Days</span>
+                <span className="text-sm font-extrabold text-emerald-900">—</span>
+              </div>
+            </div>
 
             {/* Date Filters */}
             <div className="shrink-0 grid grid-cols-2 gap-1.5">
@@ -431,25 +428,8 @@ function App() {
               </div>
             </div>
 
-            {/* Health Status */}
-            {narrative && (
-              <div className="shrink-0 bg-slate-50/60 border border-slate-100 p-1 rounded-lg flex items-center justify-between">
-                <span className={`text-[8px] font-extrabold ${
-                    narrative.overall_health === 'HEALTHY' ? 'text-emerald-600' :
-                    narrative.overall_health === 'CRITICAL' ? 'text-rose-600' : 'text-amber-600'
-                  }`}>
-                    {narrative.overall_health}
-                </span>
-                <div className="flex gap-1 text-[7px]">
-                  <span className="px-1 py-0 rounded bg-rose-100 text-rose-700 font-bold">C:{narrative.critical_count}</span>
-                  <span className="px-1 py-0 rounded bg-amber-100 text-amber-700 font-bold">W:{narrative.warning_count}</span>
-                  <span className="px-1 py-0 rounded bg-emerald-100 text-emerald-700 font-bold">N:{narrative.normal_count}</span>
-                </div>
-              </div>
-            )}
-
             {/* Layer 1 Analytics: Tabbed Interface */}
-            <div className="flex-1 flex flex-col min-h-0 space-y-2">
+            <div className="flex-1 flex flex-col min-h-0 space-y-1">
               
               {/* Tab Buttons */}
               <div className="shrink-0 flex gap-2 border-b border-slate-200">
