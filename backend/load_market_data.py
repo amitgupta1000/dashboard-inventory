@@ -239,6 +239,9 @@ def _to_float(value):
         s = str(value).strip()
         if s.lower() in ['nan', '', 'none']:
             return None
+        s = s.replace(',', '').replace('₹', '').replace('Rs', '').strip()
+        if s.startswith('(') and s.endswith(')'):
+            s = f"-{s[1:-1]}"
         try:
             return float(s)
         except ValueError:

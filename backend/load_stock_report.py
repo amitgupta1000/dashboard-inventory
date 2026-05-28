@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import pandas as pd
-from sqlalchemy import select, text
+from sqlalchemy import select, text, or_
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import sessionmaker
 
@@ -102,8 +102,11 @@ def to_float(value) -> Optional[float]:
     text_value = str(value).strip()
     if not text_value:
         return None
+    normalized = text_value.replace(",", "").replace("₹", "").replace("Rs", "").strip()
+    if normalized.startswith("(") and normalized.endswith(")"):
+        normalized = f"-{normalized[1:-1]}"
     try:
-        return float(text_value)
+        return float(normalized)
     except ValueError:
         return None
 
@@ -253,6 +256,32 @@ def upsert_stock_row(
 
     if existing:
         # Record exists with all identical values - skip (treated as "updated" in feedback)
+        return "updated"
+
+    # Backfill path: if a legacy row exists with same operational keys but missing prices,
+    # update it in place instead of inserting a duplicate row.
+    legacy_query = select(InventoryDetail).where(
+        InventoryDetail.date == report_date,
+        InventoryDetail.vessel_name == (row["vessel_name"] or None),
+        InventoryDetail.vessel_date == vessel_date,
+        InventoryDetail.product_name == canonical_product_name,
+        InventoryDetail.port_name == (row["port_name"] or None),
+        InventoryDetail.company_terminal_name == (row["company_terminal_name"] or None),
+        InventoryDetail.company_name == (row["company_name"] or None),
+        InventoryDetail.unsold_qty == unsold_qty,
+        InventoryDetail.sold_qty_pending_lifting == sold_qty_pending_lifting,
+        InventoryDetail.physical_stock == physical_stock,
+        InventoryDetail.otr_qty == otr_qty,
+        InventoryDetail.no_of_days_of_stock == inventory_days,
+        or_(
+            InventoryDetail.cost_price_INR.is_(None),
+            InventoryDetail.average_selling_price_INR.is_(None),
+        ),
+    )
+    legacy_row = session.execute(legacy_query).scalar_one_or_none()
+    if legacy_row:
+        legacy_row.cost_price_INR = cost_price_INR
+        legacy_row.average_selling_price_INR = average_selling_price_INR
         return "updated"
 
     # New record (different vessel/quantities/pricing or first time)
