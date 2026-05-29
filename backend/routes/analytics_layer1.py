@@ -104,6 +104,7 @@ def _load_vessel_details(engine: sqlalchemy.Engine, target_date: date | None) ->
             otr_qty,
             "cost_price_INR",
             "average_selling_price_INR",
+            "market_price_INR",
             no_of_days_of_stock
         FROM inventory_detail
         WHERE date = :target_date
@@ -128,7 +129,8 @@ def _load_vessel_details(engine: sqlalchemy.Engine, target_date: date | None) ->
             "otr_qty": _to_float(row[10]),
             "cost_price_inr": _to_float(row[11]),
             "average_selling_price_inr": _to_float(row[12]),
-            "inventory_days": _to_float(row[13]),
+            "market_price_inr": _to_float(row[13]),
+            "inventory_days": _to_float(row[14]),
         }
         for row in rows
     ]

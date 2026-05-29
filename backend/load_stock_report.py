@@ -65,10 +65,12 @@ OPTIONAL_COLUMN_ALIASES = {
         "average_selling_price",
         "avg_sale_price",
         "avg_sale_price_inr",
+        "avg_sale_price_mt_inr",
     },
     "market_price_INR": {
         "market_price",
         "market_price_inr",
+        "market_price_mt_inr",
     },
 }
 
@@ -193,7 +195,7 @@ def _find_preferred_sheet(path: str) -> str:
         "vessel_date", "vessel_name", "product_name", "port",
         "unsold_qty", "sold_qty_pending_lifting", "physical_stock", "otr_qty",
         "terminal", "company", "no_of_days_of_stock",
-        "purchase_price_mt_inr", "avg_sale_price",
+        "purchase_price_mt_inr", "avg_sale_price", "avg_sale_price_mt_inr", "market_price_mt_inr",
     }
 
     for sheet_name in xl.sheet_names:
@@ -265,7 +267,15 @@ def _read_stock_report_excel(path: str) -> tuple[date, pd.DataFrame]:
         df[field] = source[selected] if selected is not None else None
 
     for column in ["vessel_name", "product_name", "port_name", "company_terminal_name", "company_name"]:
-        df[column] = df[column].astype(str).str.strip()
+        df[column] = (
+            df[column]
+            .astype("string")
+            .str.strip()
+            .replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA, "None": pd.NA})
+        )
+
+    # Drop footer/summary rows: keep only real vessel-level records.
+    df = df[df["vessel_name"].notna() & df["product_name"].notna() & df["port_name"].notna()].copy()
 
     return report_date, df
 
@@ -305,7 +315,14 @@ def _read_stock_report_csv(path: str) -> tuple[date, pd.DataFrame]:
             df[target_field] = None
 
     for column in ["vessel_name", "product_name", "port_name", "company_terminal_name", "company_name"]:
-        df[column] = df[column].astype(str).str.strip()
+        df[column] = (
+            df[column]
+            .astype("string")
+            .str.strip()
+            .replace({"": pd.NA, "nan": pd.NA, "NaN": pd.NA, "None": pd.NA})
+        )
+
+    df = df[df["vessel_name"].notna() & df["product_name"].notna() & df["port_name"].notna()].copy()
 
     return report_date, df
 

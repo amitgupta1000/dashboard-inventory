@@ -7,9 +7,10 @@ import UploadPanel from './components/UploadPanel';
 
 type TopMetrics = {
   products: number;
-  physicalStock: number;
+  unsoldStock: number;
   stockValue: number;
   mtm: number;
+  realisedGm: number;
   pricedProducts: number;
   missingMarketPriceProducts: number;
 };
@@ -42,9 +43,10 @@ function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [topMetrics, setTopMetrics] = useState<TopMetrics>({
     products: 0,
-    physicalStock: 0,
+    unsoldStock: 0,
     stockValue: 0,
     mtm: 0,
+    realisedGm: 0,
     pricedProducts: 0,
     missingMarketPriceProducts: 0,
   });
@@ -181,41 +183,25 @@ function App() {
         ? apiUrl(`/api/stock-analytics/summary?${stockParams.toString()}`)
         : apiUrl('/api/stock-analytics/summary');
 
-      const marketByDateUrl = asOfParam
-        ? apiUrl(`/api/market-data?report_date=${encodeURIComponent(asOfParam)}`)
-        : apiUrl('/api/market-data');
-      const marketLatestUrl = apiUrl('/api/market-data');
+      const detailUrl = stockParams.toString()
+        ? apiUrl(`/api/analytics/vessel-detail?${stockParams.toString()}`)
+        : apiUrl('/api/analytics/vessel-detail');
 
-      const [stockRes, marketRes] = await Promise.all([
+      const [stockRes, detailRes] = await Promise.all([
         fetch(stockUrl),
-        fetch(marketByDateUrl),
+        fetch(detailUrl),
       ]);
 
       const stockJson = await stockRes.json();
-      let marketJson = await marketRes.json();
+      const detailJson = await detailRes.json();
 
       const stockRows = Array.isArray(stockJson?.data) ? stockJson.data : [];
-      let marketRows = Array.isArray(marketJson?.data) ? marketJson.data : [];
-
-      // If there is no market snapshot for the stock as_of date, use latest market snapshot.
-      if (asOfParam && marketRows.length === 0) {
-        const latestRes = await fetch(marketLatestUrl);
-        marketJson = await latestRes.json();
-        marketRows = Array.isArray(marketJson?.data) ? marketJson.data : [];
-      }
+      const detailRows = Array.isArray(detailJson?.data) ? detailJson.data : [];
 
       const normalizeProductKey = (value: string) =>
         String(value || '')
           .toUpperCase()
           .replace(/[^A-Z0-9]+/g, '');
-
-      const parseMarketProductName = (row: any) => {
-        const direct = String(row?.product_name || '').trim();
-        if (direct) return direct;
-        const raw = String(row?.product || '').trim();
-        if (!raw) return '';
-        return raw.replace(/\s*-\s*[^-]+$/, '').trim();
-      };
 
       const productAgg: Record<string, { physical: number; unsold: number; stockValue: number }> = {};
 
@@ -237,63 +223,59 @@ function App() {
         productAgg[productName].stockValue += stockValue;
       }
 
-      const marketPriceByProduct: Record<string, number> = {};
-      const marketPriceBuckets: Record<string, number[]> = {};
-
-      for (const row of marketRows) {
-        const productName = parseMarketProductName(row);
-        if (!productName) continue;
-
-        const marketPrice = Number(row?.market_price || 0);
-        if (!Number.isFinite(marketPrice) || marketPrice <= 0) continue;
-
-        const key = normalizeProductKey(productName);
-        if (!key) continue;
-
-        if (!marketPriceBuckets[key]) {
-          marketPriceBuckets[key] = [];
-        }
-        marketPriceBuckets[key].push(marketPrice);
-      }
-
-      Object.keys(marketPriceBuckets).forEach((productKey) => {
-        const values = marketPriceBuckets[productKey];
-        const avg = values.reduce((sum, v) => sum + v, 0) / values.length;
-        marketPriceByProduct[productKey] = avg;
-      });
-
       let products = 0;
-      let totalPhysicalStock = 0;
+      let totalUnsoldStock = 0;
       let totalStockValue = 0;
       let totalMarkToMarketValue = 0;
+      let totalRealisedGm = 0;
       let pricedProducts = 0;
       let missingMarketPriceProducts = 0;
 
       for (const [productName, agg] of Object.entries(productAgg)) {
         const physical = agg.physical;
+        const marketPricedUnsold = detailRows
+          .filter((row: any) => normalizeProductKey(String(row?.product_name || '')) === normalizeProductKey(productName))
+          .reduce((sum: number, row: any) => {
+            const market = Number(row?.market_price_inr || 0);
+            const unsoldQty = Number(row?.unsold_qty || 0);
+            return sum + (market > 0 ? unsoldQty : 0);
+          }, 0);
+
         const unsold = agg.unsold;
-        const stockValue = agg.stockValue;
-        const marketPriceInr = marketPriceByProduct[normalizeProductKey(productName)];
 
         if (physical !== 0) {
           products += 1;
-          if (marketPriceInr === undefined) {
+          if (marketPricedUnsold <= 0) {
             missingMarketPriceProducts += 1;
           } else {
             pricedProducts += 1;
           }
         }
 
-        totalPhysicalStock += physical;
-        totalStockValue += stockValue;
-        totalMarkToMarketValue += unsold * (marketPriceInr ?? 0);
+      }
+
+      for (const row of detailRows) {
+        const unsoldStock = Number(row?.unsold_qty || 0);
+        const purchasePrice = Number(row?.cost_price_inr || 0);
+        const rowMarketPrice = Number(row?.market_price_inr || 0);
+        const marketPrice = rowMarketPrice > 0 ? rowMarketPrice : 0;
+
+        totalUnsoldStock += unsoldStock;
+        totalStockValue += unsoldStock * purchasePrice;
+        totalMarkToMarketValue += unsoldStock * marketPrice;
+
+        const avgSalePrice = Number(row?.average_selling_price_inr || 0);
+        const otrQty = Number(row?.otr_qty || 0);
+        const realizedQty = Math.max(0, otrQty - unsoldStock);
+        totalRealisedGm += (avgSalePrice - purchasePrice) * realizedQty;
       }
 
       setTopMetrics({
         products,
-        physicalStock: totalPhysicalStock,
+        unsoldStock: totalUnsoldStock,
         stockValue: totalStockValue,
         mtm: totalMarkToMarketValue - totalStockValue,
+        realisedGm: totalRealisedGm,
         pricedProducts,
         missingMarketPriceProducts,
       });
@@ -301,9 +283,10 @@ function App() {
       console.error('Failed to fetch top metrics:', e);
       setTopMetrics({
         products: 0,
-        physicalStock: 0,
+        unsoldStock: 0,
         stockValue: 0,
         mtm: 0,
+        realisedGm: 0,
         pricedProducts: 0,
         missingMarketPriceProducts: 0,
       });
@@ -436,8 +419,8 @@ function App() {
           
           <div className="flex-1 flex flex-col min-h-0 px-5 py-3 space-y-1">
             
-            {/* 4 Metric Tabs - Horizontal */}
-            <div className="shrink-0 grid grid-cols-4 gap-1">
+            {/* 5 Metric Tabs - Horizontal */}
+            <div className="shrink-0 grid grid-cols-5 gap-1">
               <div className="bg-cyan-50 border border-cyan-200/50 p-1.5 rounded-md text-center">
                 <span className="text-[7px] font-bold text-cyan-600 uppercase block">Products</span>
                 <span className="text-sm font-extrabold text-cyan-900">
@@ -445,9 +428,9 @@ function App() {
                 </span>
               </div>
               <div className="bg-blue-50 border border-blue-200/50 p-1.5 rounded-md text-center">
-                <span className="text-[7px] font-bold text-blue-600 uppercase block">Physical Stock (MT)</span>
+                <span className="text-[7px] font-bold text-blue-600 uppercase block">Unsold Stock (MT)</span>
                 <span className="text-sm font-extrabold text-blue-900">
-                  {loadingTopMetrics ? '...' : Number(topMetrics.physicalStock).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  {loadingTopMetrics ? '...' : Number(topMetrics.unsoldStock).toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </span>
               </div>
               <div className="bg-purple-50 border border-purple-200/50 p-1.5 rounded-md text-center">
@@ -460,6 +443,12 @@ function App() {
                 <span className="text-[7px] font-bold text-emerald-600 uppercase block">MTM (Rs. Cr.)</span>
                 <span className="text-sm font-extrabold text-emerald-900">
                   {loadingTopMetrics ? '...' : `Rs ${(Number(topMetrics.mtm) / 10000000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                </span>
+              </div>
+              <div className="bg-amber-50 border border-amber-200/50 p-1.5 rounded-md text-center">
+                <span className="text-[7px] font-bold text-amber-600 uppercase block">REALISED GM (Rs. Cr.)</span>
+                <span className="text-sm font-extrabold text-amber-900">
+                  {loadingTopMetrics ? '...' : `Rs ${(Number(topMetrics.realisedGm) / 10000000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                 </span>
               </div>
             </div>
