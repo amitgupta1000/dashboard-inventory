@@ -51,10 +51,131 @@ function App() {
     missingMarketPriceProducts: 0,
   });
   const [loadingTopMetrics, setLoadingTopMetrics] = useState(false);
+  const [kpiRows, setKpiRows] = useState<any[]>([]);
+  const [companyOptions, setCompanyOptions] = useState<string[]>([]);
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
   const apiUrl = (path: string) => (API_BASE_URL ? `${API_BASE_URL}${path}` : path);
+
+  const computeTopMetrics = (rows: any[], selectedCompanyList: string[]): TopMetrics => {
+    if (!rows.length || !selectedCompanyList.length) {
+      return {
+        products: 0,
+        unsoldStock: 0,
+        stockValue: 0,
+        mtm: 0,
+        realisedGm: 0,
+        pricedProducts: 0,
+        missingMarketPriceProducts: 0,
+      };
+    }
+
+    const selectedSet = new Set(selectedCompanyList.map((c) => c.trim()));
+    const filteredRows = rows.filter((row) => selectedSet.has(String(row?.company_name || '').trim()));
+
+    if (!filteredRows.length) {
+      return {
+        products: 0,
+        unsoldStock: 0,
+        stockValue: 0,
+        mtm: 0,
+        realisedGm: 0,
+        pricedProducts: 0,
+        missingMarketPriceProducts: 0,
+      };
+    }
+
+    const productAgg: Record<string, {
+      physical: number;
+      unsold: number;
+      stockValue: number;
+      mtmValue: number;
+      hasMarketPrice: boolean;
+    }> = {};
+
+    let totalRealisedGm = 0;
+
+    for (const row of filteredRows) {
+      const productName = String(row?.product_name || '').trim();
+      if (!productName) continue;
+
+      const physical = Number(row?.physical_stock || 0);
+      const unsold = Number(row?.unsold_qty || 0);
+      const purchasePrice = Number(row?.cost_price_inr || 0);
+      const marketPrice = Number(row?.market_price_inr || 0);
+
+      if (!productAgg[productName]) {
+        productAgg[productName] = {
+          physical: 0,
+          unsold: 0,
+          stockValue: 0,
+          mtmValue: 0,
+          hasMarketPrice: false,
+        };
+      }
+
+      productAgg[productName].physical += physical;
+      productAgg[productName].unsold += unsold;
+      productAgg[productName].stockValue += unsold * purchasePrice;
+      productAgg[productName].mtmValue += unsold * marketPrice;
+      if (marketPrice > 0 && unsold > 0) {
+        productAgg[productName].hasMarketPrice = true;
+      }
+
+      const avgSalePrice = Number(row?.average_selling_price_inr || 0);
+      const otrQty = Number(row?.otr_qty || 0);
+      const realizedQty = Math.max(0, otrQty - unsold);
+      totalRealisedGm += (avgSalePrice - purchasePrice) * realizedQty;
+    }
+
+    let products = 0;
+    let totalUnsoldStock = 0;
+    let totalStockValue = 0;
+    let totalMtmValue = 0;
+    let pricedProducts = 0;
+    let missingMarketPriceProducts = 0;
+
+    for (const agg of Object.values(productAgg)) {
+      if (agg.physical !== 0) {
+        products += 1;
+        if (agg.hasMarketPrice) {
+          pricedProducts += 1;
+        } else {
+          missingMarketPriceProducts += 1;
+        }
+      }
+      totalUnsoldStock += agg.unsold;
+      totalStockValue += agg.stockValue;
+      totalMtmValue += agg.mtmValue;
+    }
+
+    return {
+      products,
+      unsoldStock: totalUnsoldStock,
+      stockValue: totalStockValue,
+      mtm: totalMtmValue - totalStockValue,
+      realisedGm: totalRealisedGm,
+      pricedProducts,
+      missingMarketPriceProducts,
+    };
+  };
+
+  const toggleCompany = (companyName: string) => {
+    setSelectedCompanies((prev) => {
+      if (prev.includes(companyName)) {
+        if (prev.length === 1) return prev;
+        return prev.filter((c) => c !== companyName);
+      }
+      return [...prev, companyName];
+    });
+  };
+
+  const toggleAllCompanies = () => {
+    if (!companyOptions.length) return;
+    setSelectedCompanies(companyOptions);
+  };
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -179,106 +300,31 @@ function App() {
       if (asOfParam) stockParams.set('as_of', asOfParam);
       if (backdateParam) stockParams.set('backdate', backdateParam);
 
-      const stockUrl = stockParams.toString()
-        ? apiUrl(`/api/stock-analytics/summary?${stockParams.toString()}`)
-        : apiUrl('/api/stock-analytics/summary');
-
       const detailUrl = stockParams.toString()
         ? apiUrl(`/api/analytics/vessel-detail?${stockParams.toString()}`)
         : apiUrl('/api/analytics/vessel-detail');
 
-      const [stockRes, detailRes] = await Promise.all([
-        fetch(stockUrl),
-        fetch(detailUrl),
-      ]);
-
-      const stockJson = await stockRes.json();
+      const detailRes = await fetch(detailUrl);
       const detailJson = await detailRes.json();
-
-      const stockRows = Array.isArray(stockJson?.data) ? stockJson.data : [];
       const detailRows = Array.isArray(detailJson?.data) ? detailJson.data : [];
 
-      const normalizeProductKey = (value: string) =>
-        String(value || '')
-          .toUpperCase()
-          .replace(/[^A-Z0-9]+/g, '');
+      setKpiRows(detailRows);
 
-      const productAgg: Record<string, { physical: number; unsold: number; stockValue: number }> = {};
+      const companies: string[] = Array.from(
+        new Set<string>(
+          detailRows
+            .map((row: any) => String(row?.company_name || '').trim())
+            .filter(Boolean)
+        )
+      ).sort((a: string, b: string) => a.localeCompare(b));
 
-      for (const row of stockRows) {
-        const productName = String(row?.product_name || '').trim();
-        if (!productName) continue;
+      setCompanyOptions(companies);
 
-        const physical = Number(row?.physical_stock || 0);
-        const unsoldQty = Number(row?.unsold_qty || 0);
-        const costPrice = Number(row?.cost_price_inr || 0);
-        const stockValue = unsoldQty * costPrice;
+      const retainedSelection = selectedCompanies.filter((c) => companies.includes(c));
+      const effectiveSelection = retainedSelection.length ? retainedSelection : companies;
 
-        if (!productAgg[productName]) {
-          productAgg[productName] = { physical: 0, unsold: 0, stockValue: 0 };
-        }
-
-        productAgg[productName].physical += physical;
-        productAgg[productName].unsold += unsoldQty;
-        productAgg[productName].stockValue += stockValue;
-      }
-
-      let products = 0;
-      let totalUnsoldStock = 0;
-      let totalStockValue = 0;
-      let totalMarkToMarketValue = 0;
-      let totalRealisedGm = 0;
-      let pricedProducts = 0;
-      let missingMarketPriceProducts = 0;
-
-      for (const [productName, agg] of Object.entries(productAgg)) {
-        const physical = agg.physical;
-        const marketPricedUnsold = detailRows
-          .filter((row: any) => normalizeProductKey(String(row?.product_name || '')) === normalizeProductKey(productName))
-          .reduce((sum: number, row: any) => {
-            const market = Number(row?.market_price_inr || 0);
-            const unsoldQty = Number(row?.unsold_qty || 0);
-            return sum + (market > 0 ? unsoldQty : 0);
-          }, 0);
-
-        const unsold = agg.unsold;
-
-        if (physical !== 0) {
-          products += 1;
-          if (marketPricedUnsold <= 0) {
-            missingMarketPriceProducts += 1;
-          } else {
-            pricedProducts += 1;
-          }
-        }
-
-      }
-
-      for (const row of detailRows) {
-        const unsoldStock = Number(row?.unsold_qty || 0);
-        const purchasePrice = Number(row?.cost_price_inr || 0);
-        const rowMarketPrice = Number(row?.market_price_inr || 0);
-        const marketPrice = rowMarketPrice > 0 ? rowMarketPrice : 0;
-
-        totalUnsoldStock += unsoldStock;
-        totalStockValue += unsoldStock * purchasePrice;
-        totalMarkToMarketValue += unsoldStock * marketPrice;
-
-        const avgSalePrice = Number(row?.average_selling_price_inr || 0);
-        const otrQty = Number(row?.otr_qty || 0);
-        const realizedQty = Math.max(0, otrQty - unsoldStock);
-        totalRealisedGm += (avgSalePrice - purchasePrice) * realizedQty;
-      }
-
-      setTopMetrics({
-        products,
-        unsoldStock: totalUnsoldStock,
-        stockValue: totalStockValue,
-        mtm: totalMarkToMarketValue - totalStockValue,
-        realisedGm: totalRealisedGm,
-        pricedProducts,
-        missingMarketPriceProducts,
-      });
+      setSelectedCompanies(effectiveSelection);
+      setTopMetrics(computeTopMetrics(detailRows, effectiveSelection));
     } catch (e) {
       console.error('Failed to fetch top metrics:', e);
       setTopMetrics({
@@ -290,6 +336,9 @@ function App() {
         pricedProducts: 0,
         missingMarketPriceProducts: 0,
       });
+      setKpiRows([]);
+      setCompanyOptions([]);
+      setSelectedCompanies([]);
     } finally {
       setLoadingTopMetrics(false);
     }
@@ -320,6 +369,11 @@ function App() {
   useEffect(() => {
     fetchTopMetrics(analyticsAsOfDate, analyticsBackdate);
   }, [analyticsAsOfDate, analyticsBackdate]);
+
+  useEffect(() => {
+    if (!kpiRows.length || !selectedCompanies.length) return;
+    setTopMetrics(computeTopMetrics(kpiRows, selectedCompanies));
+  }, [kpiRows, selectedCompanies]);
 
   useEffect(() => {
     fetchNarrative(analyticsAsOfDate, analyticsBackdate);
@@ -418,6 +472,38 @@ function App() {
           </div>
           
           <div className="flex-1 flex flex-col min-h-0 px-5 py-3 space-y-1">
+
+            <div className="shrink-0 flex flex-wrap items-center gap-1.5 pb-1">
+              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mr-1">Companies</span>
+              <span className="text-[8px] font-semibold text-slate-500 mr-1">
+                Selected: {selectedCompanies.length}/{companyOptions.length}
+              </span>
+              <button
+                onClick={toggleAllCompanies}
+                className={`px-2 py-1 rounded-full border text-[9px] font-bold transition-all ${selectedCompanies.length === companyOptions.length && companyOptions.length > 0
+                  ? 'bg-cyan-600 text-white border-cyan-600'
+                  : 'bg-white text-slate-600 border-slate-300 hover:border-cyan-400'
+                }`}
+              >
+                All ({companyOptions.length})
+              </button>
+              {companyOptions.map((company) => {
+                const isSelected = selectedCompanies.includes(company);
+                return (
+                  <button
+                    key={company}
+                    onClick={() => toggleCompany(company)}
+                    className={`px-2 py-1 rounded-full border text-[9px] font-semibold transition-all ${isSelected
+                      ? 'bg-cyan-100 text-cyan-700 border-cyan-300'
+                      : 'bg-white text-slate-500 border-slate-300 hover:border-cyan-300'
+                    }`}
+                    title={company}
+                  >
+                    {company}
+                  </button>
+                );
+              })}
+            </div>
             
             {/* 5 Metric Tabs - Horizontal */}
             <div className="shrink-0 grid grid-cols-5 gap-1">
