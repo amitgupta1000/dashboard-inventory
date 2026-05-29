@@ -18,7 +18,7 @@ type TopMetrics = {
 function App() {
   // Layer 1 Analytics: Tab-based exploration
   const [activeAnalyticsTab, setActiveAnalyticsTab] = useState<'inventory' | 'summary'>('inventory');
-  const [summaryViewType, setSummaryViewType] = useState<'product' | 'company' | 'port'>('product');
+  const [summaryViewType, setSummaryViewType] = useState<'product' | 'port'>('product');
   const [vesselDetails, setVesselDetails] = useState<any[]>([]);
   const [summaryViewData, setSummaryViewData] = useState<any[]>([]);
   const [loadingVesselDetails, setLoadingVesselDetails] = useState(false);
@@ -37,6 +37,10 @@ function App() {
   // Modal State
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [summaryDrilldownOpen, setSummaryDrilldownOpen] = useState(false);
+  const [summaryDrilldownLoading, setSummaryDrilldownLoading] = useState(false);
+  const [summaryDrilldownRows, setSummaryDrilldownRows] = useState<any[]>([]);
+  const [summaryDrilldownContext, setSummaryDrilldownContext] = useState<any>(null);
 
   // UI State
   const [toast, setToast] = useState<any>(null);
@@ -199,6 +203,25 @@ function App() {
     }
   };
 
+  const fetchVesselDetailRowsRaw = async (
+    asOfParam = analyticsAsOfDate,
+    backdateParam = analyticsBackdate,
+    unsoldDaysThresholdParam = unsoldDaysThreshold,
+  ) => {
+    const params = new URLSearchParams();
+    if (asOfParam) params.set('as_of', asOfParam);
+    if (backdateParam) params.set('backdate', backdateParam);
+    params.set('unsold_days_threshold', String(unsoldDaysThresholdParam));
+
+    const url = params.toString()
+      ? apiUrl(`/api/analytics/vessel-detail?${params.toString()}`)
+      : apiUrl('/api/analytics/vessel-detail');
+
+    const response = await fetch(url);
+    const data = await response.json();
+    return Array.isArray(data?.data) ? data.data : [];
+  };
+
   const fetchVesselDetails = async (
     asOfParam = analyticsAsOfDate,
     backdateParam = analyticsBackdate,
@@ -206,20 +229,8 @@ function App() {
   ) => {
     setLoadingVesselDetails(true);
     try {
-      const params = new URLSearchParams();
-      if (asOfParam) params.set('as_of', asOfParam);
-      if (backdateParam) params.set('backdate', backdateParam);
-      params.set('unsold_days_threshold', String(unsoldDaysThresholdParam));
-      
-      const url = params.toString()
-        ? apiUrl(`/api/analytics/vessel-detail?${params.toString()}`)
-        : apiUrl('/api/analytics/vessel-detail');
-      
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.success) {
-        setVesselDetails(data.data || []);
-      }
+      const rows = await fetchVesselDetailRowsRaw(asOfParam, backdateParam, unsoldDaysThresholdParam);
+      setVesselDetails(rows);
     } catch (e) {
       console.error('Failed to fetch vessel details:', e);
       showToast('Failed to load vessel details', 'error');
@@ -228,11 +239,49 @@ function App() {
     }
   };
 
+  const openSummaryDrilldown = async (row: any) => {
+    const scope = summaryViewType === 'product'
+      ? { key: 'product_name', value: String(row?.product_name || '').trim(), label: 'Product' }
+      : { key: 'port_name', value: String(row?.port_name || '').trim(), label: 'Port' };
+
+    if (!scope.value) {
+      showToast('Unable to open drill-down for empty selection', 'error');
+      return;
+    }
+
+    setSummaryDrilldownContext({
+      scope,
+      title: scope.value,
+      summaryRow: row,
+    });
+    setSummaryDrilldownOpen(true);
+    setSummaryDrilldownLoading(true);
+
+    try {
+      const detailRows = await fetchVesselDetailRowsRaw(analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
+      const allowedCompanies = new Set(selectedCompanies.map((name) => String(name || '').trim()));
+      const filtered = detailRows.filter((detail: any) => {
+        const companyName = String(detail?.company_name || '').trim();
+        const inCompanyScope = !allowedCompanies.size || allowedCompanies.has(companyName);
+        const scopeValue = String(detail?.[scope.key] || '').trim();
+        return inCompanyScope && scopeValue === scope.value;
+      });
+      setSummaryDrilldownRows(filtered);
+    } catch (e) {
+      console.error('Failed to load summary drill-down:', e);
+      setSummaryDrilldownRows([]);
+      showToast('Failed to load summary drill-down', 'error');
+    } finally {
+      setSummaryDrilldownLoading(false);
+    }
+  };
+
   const fetchSummaryView = async (
     viewType = summaryViewType,
     asOfParam = analyticsAsOfDate,
     backdateParam = analyticsBackdate,
     unsoldDaysThresholdParam = unsoldDaysThreshold,
+    selectedCompanyListParam = selectedCompanies,
   ) => {
     setLoadingSummaryView(true);
     try {
@@ -241,6 +290,10 @@ function App() {
       if (asOfParam) params.set('as_of', asOfParam);
       if (backdateParam) params.set('backdate', backdateParam);
       params.set('unsold_days_threshold', String(unsoldDaysThresholdParam));
+      (selectedCompanyListParam || [])
+        .map((name) => String(name || '').trim())
+        .filter(Boolean)
+        .forEach((name) => params.append('company', name));
       
       const response = await fetch(apiUrl(`/api/analytics/summary?${params.toString()}`));
       const data = await response.json();
@@ -366,7 +419,7 @@ function App() {
     }
 
     if (summaryModalOpen || activeAnalyticsTab === 'summary') {
-      await fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
+      await fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold, selectedCompanies);
     }
 
     if (selectedProduct) {
@@ -393,9 +446,9 @@ function App() {
 
   useEffect(() => {
     if (activeAnalyticsTab === 'summary') {
-      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
+      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold, selectedCompanies);
     }
-  }, [summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold]);
+  }, [summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold, selectedCompanies, activeAnalyticsTab]);
 
   useEffect(() => {
     if (inventoryModalOpen) {
@@ -405,15 +458,26 @@ function App() {
 
   useEffect(() => {
     if (summaryModalOpen) {
-      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
+      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold, selectedCompanies);
     }
-  }, [summaryModalOpen, summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold]);
+  }, [summaryModalOpen, summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold, selectedCompanies]);
 
   useEffect(() => {
     if (selectedProduct) {
       fetchDrilldown(selectedProduct, analyticsAsOfDate, analyticsBackdate);
     }
   }, [selectedProduct, analyticsAsOfDate, analyticsBackdate]);
+
+  const filteredVesselDetails = vesselDetails.filter((row) => {
+    const companyName = String(row?.company_name || '').trim();
+    return selectedCompanies.includes(companyName);
+  });
+
+  const filteredInventoryDetails = vesselDetails.filter((row: any) => {
+    if (!selectedCompanies.length) return true;
+    const companyName = String(row?.company_name || '').trim();
+    return selectedCompanies.includes(companyName);
+  });
 
 
 
@@ -773,19 +837,53 @@ function App() {
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               <div className="p-4 space-y-1.5">
+                <div className="mb-2 p-2 rounded-lg border border-cyan-100 bg-cyan-50/60">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-cyan-700 mr-1">Company Filters</span>
+                    <span className="text-[8px] font-semibold text-slate-600 mr-1">
+                      Selected: {selectedCompanies.length}/{companyOptions.length}
+                    </span>
+                    <button
+                      onClick={toggleAllCompanies}
+                      className={`px-2 py-1 rounded-full border text-[9px] font-bold transition-all ${selectedCompanies.length === companyOptions.length && companyOptions.length > 0
+                        ? 'bg-cyan-600 text-white border-cyan-600'
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-cyan-400'
+                      }`}
+                    >
+                      All ({companyOptions.length})
+                    </button>
+                    {companyOptions.map((company) => {
+                      const isSelected = selectedCompanies.includes(company);
+                      return (
+                        <button
+                          key={company}
+                          onClick={() => toggleCompany(company)}
+                          className={`px-2 py-1 rounded-full border text-[9px] font-semibold transition-all ${isSelected
+                            ? 'bg-cyan-100 text-cyan-700 border-cyan-300'
+                            : 'bg-white text-slate-500 border-slate-300 hover:border-cyan-300'
+                          }`}
+                          title={company}
+                        >
+                          {company}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {loadingVesselDetails ? (
                   <div className="text-center py-12 text-slate-400">
                     <div className="inline-block text-3xl mb-3">⏳</div>
                     <p className="font-medium">Loading inventory data...</p>
                   </div>
-                ) : vesselDetails.length === 0 ? (
+                ) : filteredVesselDetails.length === 0 ? (
                   <div className="text-center py-12 text-slate-400">
                     <div className="inline-block text-3xl mb-3">📭</div>
-                    <p className="font-medium">No inventory data available</p>
+                    <p className="font-medium">No inventory data available for selected companies</p>
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    {vesselDetails.map((row, idx) => (
+                    {filteredVesselDetails.map((row, idx) => (
                       <div
                         key={idx}
                         className="p-2.5 bg-gradient-to-r from-slate-50 to-cyan-50 border border-slate-200 rounded-lg hover:border-cyan-300 transition-all cursor-pointer"
@@ -921,7 +1019,7 @@ function App() {
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
               <p className="text-xs text-slate-600">
-                Showing <span className="font-bold text-slate-900">{Math.min(vesselDetails.length, 100)}</span> of <span className="font-bold text-slate-900">{vesselDetails.length}</span> records
+                Showing <span className="font-bold text-slate-900">{Math.min(filteredVesselDetails.length, 100)}</span> of <span className="font-bold text-slate-900">{filteredVesselDetails.length}</span> records
               </p>
               <button
                 onClick={() => setInventoryModalOpen(false)}
@@ -944,7 +1042,7 @@ function App() {
                 <span className="w-3 h-3 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-500 shadow-md"></span>
                 <h2 className="text-lg font-bold text-slate-900">Summary Analysis</h2>
                 <div className="flex gap-1 ml-auto">
-                  {(['product', 'company', 'port'] as const).map((type) => (
+                  {(['product', 'port'] as const).map((type) => (
                     <button
                       key={type}
                       onClick={() => setSummaryViewType(type)}
@@ -954,7 +1052,7 @@ function App() {
                           : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                       }`}
                     >
-                      {type === 'product' ? '📦 Product' : type === 'company' ? '🏢 Company' : '⛴️ Port'}
+                      {type === 'product' ? '📦 Product' : '⛴️ Port'}
                     </button>
                   ))}
                 </div>
@@ -971,6 +1069,40 @@ function App() {
             {/* Modal Content */}
             <div className="flex-1 overflow-y-auto custom-scrollbar">
               <div className="p-4 space-y-1.5">
+                <div className="mb-2 p-2 rounded-lg border border-emerald-100 bg-emerald-50/60">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-700 mr-1">Company Filters</span>
+                    <span className="text-[8px] font-semibold text-slate-600 mr-1">
+                      Selected: {selectedCompanies.length}/{companyOptions.length}
+                    </span>
+                    <button
+                      onClick={toggleAllCompanies}
+                      className={`px-2 py-1 rounded-full border text-[9px] font-bold transition-all ${selectedCompanies.length === companyOptions.length && companyOptions.length > 0
+                        ? 'bg-cyan-600 text-white border-cyan-600'
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-cyan-400'
+                      }`}
+                    >
+                      All ({companyOptions.length})
+                    </button>
+                    {companyOptions.map((company) => {
+                      const isSelected = selectedCompanies.includes(company);
+                      return (
+                        <button
+                          key={company}
+                          onClick={() => toggleCompany(company)}
+                          className={`px-2 py-1 rounded-full border text-[9px] font-semibold transition-all ${isSelected
+                            ? 'bg-cyan-100 text-cyan-700 border-cyan-300'
+                            : 'bg-white text-slate-500 border-slate-300 hover:border-cyan-300'
+                          }`}
+                          title={company}
+                        >
+                          {company}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {loadingSummaryView ? (
                   <div className="text-center py-12 text-slate-400">
                     <div className="inline-block text-3xl mb-3">⏳</div>
@@ -984,46 +1116,27 @@ function App() {
                 ) : (
                   <div className="space-y-1.5">
                     {summaryViewData.map((row, idx) => {
-                      const displayName = 
-                        summaryViewType === 'product' ? row.product_name :
-                        summaryViewType === 'company' ? row.company_name :
-                        row.port_name;
-                      const entityCount = 
-                        summaryViewType === 'product' ? row.vessel_count :
-                        summaryViewType === 'company' ? row.product_count :
-                        row.company_count;
+                      const displayName =
+                        summaryViewType === 'product' ? row.product_name : row.port_name;
+                      const entityCount =
+                        summaryViewType === 'product' ? row.vessel_count : row.company_count;
                       return (
                         <div
                           key={idx}
                           className="p-2.5 bg-gradient-to-r from-slate-50 to-emerald-50 border border-slate-200 rounded-lg hover:border-emerald-300 transition-all cursor-pointer"
-                          onClick={() => {
-                            if (summaryViewType === 'product') {
-                              setSelectedProduct({
-                                product_name: row.product_name,
-                                port_name: '',
-                                company_name: '',
-                                physical_stock: row.physical_stock,
-                                stock_value: row.stock_value,
-                                average_selling_price_inr: row.average_selling_price_inr,
-                                cost_price_inr: row.cost_price_inr,
-                                margin_per_mt_inr: row.margin_per_mt_inr,
-                                vessel_count: row.vessel_count,
-                              });
-                              showToast('Pick a vessel row from Inventory Details to enable drill-down', 'success');
-                            }
-                          }}
+                          onClick={() => openSummaryDrilldown(row)}
                         >
                           {/* Header */}
                           <div className="flex justify-between items-start mb-2">
                             <div className="min-w-0 flex-1">
                               <p className="font-bold text-xs text-slate-900 truncate">{displayName}</p>
                               <p className="text-[10px] text-slate-600">
-                                {summaryViewType === 'product' ? `${entityCount} vessels` : summaryViewType === 'company' ? `${entityCount} products` : `${entityCount} ports`}
+                                {summaryViewType === 'product' ? `${entityCount} vessels` : `${entityCount} companies`}
                               </p>
                             </div>
                             <div className="ml-2 text-right">
-                              <p className="text-[10px] font-bold text-emerald-600">Stock Value</p>
-                              <p className="text-xs font-bold text-emerald-700">₹{(Number(row.stock_value || 0) / 1000000).toFixed(1)}M</p>
+                              <p className="text-[10px] font-bold text-emerald-600">Stock Value (Rs. Cr.)</p>
+                              <p className="text-xs font-bold text-emerald-700">Rs {(Number(row.stock_value || 0) / 10000000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                           </div>
 
@@ -1086,6 +1199,104 @@ function App() {
               </p>
               <button
                 onClick={() => setSummaryModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Drill-down Popup */}
+      {summaryDrilldownOpen && (
+        <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[88vh] flex flex-col border border-slate-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Summary Drill-down</p>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  {summaryDrilldownContext?.scope?.label || 'Object'}: {summaryDrilldownContext?.title || 'N/A'}
+                </h3>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  {summaryDrilldownRows.length} related transactions in current filter scope
+                </p>
+              </div>
+              <button
+                onClick={() => setSummaryDrilldownOpen(false)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all"
+                title="Close drill-down"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+              {summaryDrilldownLoading ? (
+                <div className="text-center py-16 text-slate-400">
+                  <div className="inline-block text-3xl mb-3">⏳</div>
+                  <p className="font-medium">Loading related transactions...</p>
+                </div>
+              ) : summaryDrilldownRows.length === 0 ? (
+                <div className="text-center py-16 text-slate-400">
+                  <div className="inline-block text-3xl mb-3">📭</div>
+                  <p className="font-medium">No related transactions found</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {summaryDrilldownRows.map((detail, idx) => (
+                    <div key={idx} className="p-3 rounded-lg border border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">{detail.vessel_name || 'Unknown Vessel'}</p>
+                          <p className="text-[10px] text-slate-600 truncate">
+                            {detail.product_name || 'N/A'} • {detail.company_name || 'N/A'} • {detail.port_name || 'N/A'}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[9px] text-slate-500">Vessel Date</p>
+                          <p className="text-[10px] font-bold text-slate-800">{detail.vessel_date || 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-6 gap-2 mt-2 text-[10px]">
+                        <div className="bg-white rounded p-1.5 border border-slate-100">
+                          <p className="text-slate-500 font-semibold text-[9px]">Unsold</p>
+                          <p className="font-bold text-slate-900">{Number(detail.unsold_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                        <div className="bg-white rounded p-1.5 border border-slate-100">
+                          <p className="text-slate-500 font-semibold text-[9px]">Physical</p>
+                          <p className="font-bold text-slate-900">{Number(detail.physical_stock || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                        <div className="bg-white rounded p-1.5 border border-slate-100">
+                          <p className="text-slate-500 font-semibold text-[9px]">Sold Pending</p>
+                          <p className="font-bold text-slate-900">{Number(detail.sold_qty_pending_lifting || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                        <div className="bg-white rounded p-1.5 border border-slate-100">
+                          <p className="text-slate-500 font-semibold text-[9px]">OTR</p>
+                          <p className="font-bold text-slate-900">{Number(detail.otr_qty || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                        <div className="bg-white rounded p-1.5 border border-slate-100">
+                          <p className="text-slate-500 font-semibold text-[9px]">Cost/MT</p>
+                          <p className="font-bold text-slate-900">₹{Number(detail.cost_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                        <div className="bg-white rounded p-1.5 border border-slate-100">
+                          <p className="text-slate-500 font-semibold text-[9px]">Sell/MT</p>
+                          <p className="font-bold text-slate-900">₹{Number(detail.average_selling_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+              <p className="text-xs text-slate-600">
+                Showing <span className="font-bold text-slate-900">{summaryDrilldownRows.length}</span> related rows
+              </p>
+              <button
+                onClick={() => setSummaryDrilldownOpen(false)}
                 className="px-4 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg hover:bg-slate-800 transition-all"
               >
                 Close

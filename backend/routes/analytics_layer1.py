@@ -420,6 +420,21 @@ def _aggregate_by_port(details: list[dict], unsold_days_threshold: float) -> lis
     return sorted(result, key=lambda x: x["stock_value"], reverse=True)
 
 
+def _filter_details_by_companies(details: list[dict], companies: list[str] | None) -> list[dict]:
+    """Filter vessel details by company names (case-insensitive, trimmed)."""
+    if not companies:
+        return details
+
+    allowed = {str(name).strip().upper() for name in companies if str(name).strip()}
+    if not allowed:
+        return details
+
+    return [
+        row for row in details
+        if str(row.get("company_name") or "").strip().upper() in allowed
+    ]
+
+
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
@@ -510,6 +525,7 @@ async def get_summary_view(
     as_of: str | None = Query(None, description="Date in YYYY-MM-DD format"),
     backdate: str | None = Query(None, description="Compare to date in YYYY-MM-DD format"),
     unsold_days_threshold: float = Query(25.0, ge=0, description="Only calculate inventory days where unsold_qty > threshold"),
+    company: list[str] | None = Query(None, description="Optional company filters; repeat query param for multiple values"),
 ):
     """
     Get aggregated inventory summary.
@@ -525,6 +541,7 @@ async def get_summary_view(
     as_of_date, backdate_date, available_dates = _resolve_dates(engine, as_of, backdate)
     
     current_details = _load_vessel_details(engine, as_of_date)
+    current_details = _filter_details_by_companies(current_details, company)
     
     # Aggregate based on view_type
     if view_type == "product":
@@ -540,6 +557,7 @@ async def get_summary_view(
     result = current_aggregated
     if backdate_date:
         previous_details = _load_vessel_details(engine, backdate_date)
+        previous_details = _filter_details_by_companies(previous_details, company)
         
         if view_type == "product":
             previous_aggregated = _aggregate_by_product(previous_details, unsold_days_threshold)
@@ -573,5 +591,6 @@ async def get_summary_view(
         "backdate": str(backdate_date) if backdate_date else None,
         "available_dates": available_dates,
         "unsold_days_threshold": unsold_days_threshold,
+        "company_filters": company or [],
         "data": result,
     }
