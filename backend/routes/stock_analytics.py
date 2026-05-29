@@ -44,6 +44,10 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
+def _normalize_key(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
+
+
 def _get_stock_dates(engine: sqlalchemy.Engine) -> list[str]:
     query = sqlalchemy.text("""
         SELECT DISTINCT date
@@ -279,6 +283,59 @@ def _load_latest_targets_map(engine: sqlalchemy.Engine, as_of: date) -> dict[str
     }
 
 
+def _load_market_price_map(engine: sqlalchemy.Engine, as_of: date) -> dict[tuple[str, str], float]:
+    """
+    Load market price by (product_name, port) from market_data_hvb.
+    Uses latest report_date <= as_of, else latest overall snapshot.
+    """
+    try:
+        with engine.connect() as conn:
+            fallback_date_query = sqlalchemy.text("""
+                SELECT MAX(report_date)
+                FROM market_data_hvb
+                WHERE report_date <= :as_of
+            """)
+            fallback_date = conn.execute(fallback_date_query, {"as_of": as_of}).scalar()
+
+            if fallback_date is None:
+                latest_date_query = sqlalchemy.text("""
+                    SELECT MAX(report_date)
+                    FROM market_data_hvb
+                """)
+                fallback_date = conn.execute(latest_date_query).scalar()
+
+            if fallback_date is None:
+                return {}
+
+            rows_query = sqlalchemy.text("""
+                SELECT
+                    product_name,
+                    port,
+                    market_price
+                FROM market_data_hvb
+                WHERE report_date = :report_date
+                  AND market_price IS NOT NULL
+            """)
+            rows = conn.execute(rows_query, {"report_date": fallback_date}).fetchall()
+    except Exception:
+        return {}
+
+    grouped: dict[tuple[str, str], list[float]] = {}
+    for product_name, port, market_price in rows:
+        price = _to_float(market_price)
+        if price <= 0:
+            continue
+        key = (_normalize_key(product_name), _normalize_key(port))
+        grouped.setdefault(key, []).append(price)
+
+    result: dict[tuple[str, str], float] = {}
+    for key, values in grouped.items():
+        if values:
+            result[key] = sum(values) / len(values)
+
+    return result
+
+
 def _severity_rank(severity: str) -> int:
     if severity == "critical":
         return 3
@@ -353,6 +410,23 @@ def _build_flags_and_variance(row: dict, target: dict | None) -> tuple[list[dict
             "message": "Average selling price is below cost price",
         })
 
+    market_price = _to_float(row.get("market_price_inr"))
+    cost_price = _to_float(row.get("cost_price_inr"))
+    sell_price = _to_float(row.get("average_selling_price_inr"))
+    if market_price > 0 and cost_price > 0:
+        if market_price < cost_price:
+            flags.append({
+                "type": "market_below_cost",
+                "severity": "critical",
+                "message": f"Market price below cost ({market_price:.0f} < {cost_price:.0f})",
+            })
+        elif sell_price > 0 and market_price < sell_price:
+            flags.append({
+                "type": "market_below_sale",
+                "severity": "warning",
+                "message": f"Market price below avg sell ({market_price:.0f} < {sell_price:.0f})",
+            })
+
     return flags, variance
 
 
@@ -369,6 +443,7 @@ def build_stock_analytics(
     current_grouped = _aggregate_stock(current_rows)
     previous_grouped = _aggregate_stock(previous_rows)
     target_map = _load_latest_targets_map(engine, as_of)
+    market_price_map = _load_market_price_map(engine, as_of)
 
     search_key = (search or "").strip().lower()
     result_rows = []
@@ -378,6 +453,13 @@ def build_stock_analytics(
         previous = previous_grouped.get(key)
         prev_physical = _to_float(previous.get("physical_stock")) if previous else 0.0
         delta_physical = _to_float(current.get("physical_stock")) - prev_physical
+
+        market_key = (
+            _normalize_key(current.get("product_name")),
+            _normalize_key(current.get("port_name")),
+        )
+        market_price_inr = _to_float(market_price_map.get(market_key))
+        current["market_price_inr"] = round(market_price_inr, 2) if market_price_inr > 0 else None
 
         target = target_map.get(_normalize_product_name(current.get("product_name")))
         flags, variance = _build_flags_and_variance(current, target)
@@ -423,6 +505,12 @@ def build_stock_analytics(
             "target_variance": variance,
             "alert_flags": flags,
             "alert_level": severity,
+            "market_price_inr": current.get("market_price_inr"),
+            "market_vs_cost_per_mt": (
+                round(_to_float(current.get("market_price_inr")) - _to_float(current.get("cost_price_inr")), 2)
+                if current.get("market_price_inr") is not None
+                else None
+            ),
         }
 
         if search_key:

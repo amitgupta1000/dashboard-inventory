@@ -33,6 +33,10 @@ function App() {
   const [drilldownRows, setDrilldownRows] = useState<any[]>([]);
   const [loadingDrilldown, setLoadingDrilldown] = useState(false);
   const [narrative, setNarrative] = useState<any>(null);
+  const [level2Loading, setLevel2Loading] = useState(false);
+  const [level2Rows, setLevel2Rows] = useState<any[]>([]);
+  const [level2Summary, setLevel2Summary] = useState<any>(null);
+  const [marketSnapshot, setMarketSnapshot] = useState<any>(null);
 
   // Modal State
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
@@ -239,8 +243,8 @@ function App() {
     }
   };
 
-  const openSummaryDrilldown = async (row: any) => {
-    const scope = summaryViewType === 'product'
+  const openSummaryDrilldown = async (row: any, forcedScope: 'product' | 'port' = summaryViewType) => {
+    const scope = forcedScope === 'product'
       ? { key: 'product_name', value: String(row?.product_name || '').trim(), label: 'Product' }
       : { key: 'port_name', value: String(row?.port_name || '').trim(), label: 'Port' };
 
@@ -358,6 +362,49 @@ function App() {
     }
   };
 
+  const fetchLevel2Signals = async (asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+    setLevel2Loading(true);
+    try {
+      const params = new URLSearchParams();
+      if (asOfParam) params.set('as_of', asOfParam);
+      if (backdateParam) params.set('backdate', backdateParam);
+
+      const stockUrl = params.toString()
+        ? apiUrl(`/api/stock-analytics/summary?${params.toString()}`)
+        : apiUrl('/api/stock-analytics/summary');
+
+      const [stockRes, marketRes] = await Promise.all([
+        fetch(stockUrl),
+        fetch(apiUrl('/api/market-data/summary')),
+      ]);
+
+      const stockJson = await stockRes.json();
+      const marketJson = await marketRes.json();
+
+      if (stockJson?.success) {
+        setLevel2Rows(Array.isArray(stockJson.data) ? stockJson.data : []);
+        setLevel2Summary(stockJson.summary || null);
+      } else {
+        setLevel2Rows([]);
+        setLevel2Summary(null);
+      }
+
+      if (marketJson?.success) {
+        setMarketSnapshot(marketJson);
+      } else {
+        setMarketSnapshot(null);
+      }
+    } catch (e) {
+      console.error('Failed to fetch level 2 signals:', e);
+      setLevel2Rows([]);
+      setLevel2Summary(null);
+      setMarketSnapshot(null);
+      showToast('Failed to load level 2 signals', 'error');
+    } finally {
+      setLevel2Loading(false);
+    }
+  };
+
   const fetchTopMetrics = async (asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
     setLoadingTopMetrics(true);
     try {
@@ -413,6 +460,7 @@ function App() {
     await fetchAnalyticsLayerDates();
     await fetchTopMetrics(analyticsAsOfDate, analyticsBackdate);
     await fetchNarrative(analyticsAsOfDate, analyticsBackdate);
+    await fetchLevel2Signals(analyticsAsOfDate, analyticsBackdate);
 
     if (inventoryModalOpen) {
       await fetchVesselDetails(analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
@@ -445,6 +493,10 @@ function App() {
   }, [analyticsAsOfDate, analyticsBackdate]);
 
   useEffect(() => {
+    fetchLevel2Signals(analyticsAsOfDate, analyticsBackdate);
+  }, [analyticsAsOfDate, analyticsBackdate]);
+
+  useEffect(() => {
     if (activeAnalyticsTab === 'summary') {
       fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold, selectedCompanies);
     }
@@ -472,6 +524,74 @@ function App() {
     const companyName = String(row?.company_name || '').trim();
     return selectedCompanies.includes(companyName);
   });
+
+  const level2FilteredRows = level2Rows.filter((row) => {
+    if (!selectedCompanies.length) return true;
+    const companyName = String(row?.company_name || '').trim();
+    return selectedCompanies.includes(companyName);
+  });
+
+  const flattenedAlerts = level2FilteredRows
+    .flatMap((row) => (Array.isArray(row?.alert_flags) ? row.alert_flags.map((flag: any) => ({
+      ...flag,
+      product_name: row.product_name,
+      port_name: row.port_name,
+      company_name: row.company_name,
+      alert_level: row.alert_level,
+      source_row: row,
+    })) : []));
+
+  const criticalAlerts = flattenedAlerts.filter((a) => a.severity === 'critical').slice(0, 6);
+  const warningAlerts = flattenedAlerts.filter((a) => a.severity === 'warning').slice(0, 6);
+
+  const level2Actions = (() => {
+    const byType: Record<string, number> = {};
+    for (const alert of flattenedAlerts) {
+      const t = String(alert?.type || '').trim();
+      if (!t) continue;
+      byType[t] = (byType[t] || 0) + 1;
+    }
+    return Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([type, count]) => {
+        if (type === 'market_below_cost') return `Re-price or hedge ${count} exposed positions where market is below cost`;
+        if (type === 'storage_cap_breach') return `Liquidate/rotate ${count} positions breaching storage cap immediately`;
+        if (type === 'critical_low_stock') return `Replenish ${count} positions below minimum operating cover`;
+        if (type === 'high_inventory_days') return `Push commercial closure for ${count} slow-turn inventory positions`;
+        if (type === 'rapid_stock_drop') return `Validate execution quality for ${count} positions with sharp stock drop vs backdate`;
+        if (type === 'negative_margin') return `Stop loss-making dispatch mix in ${count} positions with negative margin`;
+        return `Review ${count} alerts of type ${type.replace(/_/g, ' ')}`;
+      });
+  })();
+
+  const handleLevel2AlertClick = async (alert: any, drillScope: 'product' | 'port') => {
+    const matchedRow = alert?.source_row || level2FilteredRows.find((row) => (
+      String(row?.product_name || '').trim() === String(alert?.product_name || '').trim()
+      && String(row?.port_name || '').trim() === String(alert?.port_name || '').trim()
+      && String(row?.company_name || '').trim() === String(alert?.company_name || '').trim()
+    ));
+
+    if (!matchedRow) {
+      showToast('Could not locate matching row for alert', 'error');
+      return;
+    }
+
+    setSelectedProduct({
+      product_name: matchedRow.product_name,
+      port_name: matchedRow.port_name,
+      company_name: matchedRow.company_name,
+      physical_stock: Number(matchedRow.physical_stock || 0),
+      stock_value: Number(matchedRow.stock_value || 0),
+      average_selling_price_inr: Number(matchedRow.average_selling_price_inr || 0),
+      cost_price_inr: Number(matchedRow.cost_price_inr || 0),
+      margin_per_mt_inr: Number(matchedRow.margin_per_mt_inr || 0),
+      vessel_count: Number(matchedRow.vessel_count || 0),
+    });
+
+    await openSummaryDrilldown(matchedRow, drillScope);
+    showToast(`Opened ${drillScope} drill-down with matching inventory context`, 'success');
+  };
 
   const filteredInventoryDetails = vesselDetails.filter((row: any) => {
     if (!selectedCompanies.length) return true;
@@ -778,6 +898,88 @@ function App() {
                 </div>
               </div>
             )}
+
+            {/* Level 2: Targets + Market Signals */}
+            <div className="shrink-0 space-y-2">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Level 2: Warnings & Calls To Action</span>
+              <div className="border border-amber-100 rounded-xl p-2.5 bg-amber-50/40 space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-[9px]">
+                  <div className="bg-white rounded p-1.5 border border-amber-100">
+                    <p className="text-slate-500 font-semibold text-[8px] uppercase">Critical</p>
+                    <p className="font-extrabold text-rose-600">{level2Loading ? '...' : criticalAlerts.length}</p>
+                  </div>
+                  <div className="bg-white rounded p-1.5 border border-amber-100">
+                    <p className="text-slate-500 font-semibold text-[8px] uppercase">Warnings</p>
+                    <p className="font-extrabold text-amber-700">{level2Loading ? '...' : warningAlerts.length}</p>
+                  </div>
+                </div>
+
+                <div className="text-[8px] text-slate-600 bg-white border border-slate-100 rounded p-1.5">
+                  Market snapshot: {marketSnapshot?.latest_report_date || 'NA'} | {Number(marketSnapshot?.unique_products || 0)} products | {Number(marketSnapshot?.unique_ports || 0)} ports
+                </div>
+
+                <div className="max-h-28 overflow-y-auto custom-scrollbar space-y-1">
+                  {level2Loading ? (
+                    <p className="text-[9px] text-slate-400 py-2 text-center">Loading target/market alerts...</p>
+                  ) : flattenedAlerts.length === 0 ? (
+                    <p className="text-[9px] text-slate-400 py-2 text-center">No active alerts in selected company scope</p>
+                  ) : (
+                    [...criticalAlerts, ...warningAlerts].slice(0, 8).map((alert, idx) => (
+                      <div
+                        key={`${alert.type}-${idx}`}
+                        className={`p-1.5 rounded border text-[8px] transition-all hover:shadow-sm ${alert.severity === 'critical' ? 'bg-rose-50 border-rose-200 text-rose-700 hover:border-rose-300' : 'bg-amber-50 border-amber-200 text-amber-700 hover:border-amber-300'}`}
+                        title="Click Product or Port to drill down"
+                      >
+                        <p className="font-bold truncate">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleLevel2AlertClick(alert, 'product');
+                            }}
+                            className="underline underline-offset-2 hover:opacity-80"
+                            title="Drill down by product"
+                          >
+                            {alert.product_name}
+                          </button>
+                          <span> • </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleLevel2AlertClick(alert, 'port');
+                            }}
+                            className="underline underline-offset-2 hover:opacity-80"
+                            title="Drill down by port"
+                          >
+                            {alert.port_name}
+                          </button>
+                          <span> • {alert.company_name}</span>
+                        </p>
+                        <p className="leading-snug">{alert.message}</p>
+                        <p className="mt-0.5 opacity-70">Click product or port to choose drill-down scope</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">Calls To Action</p>
+                  <div className="max-h-24 overflow-y-auto custom-scrollbar space-y-1">
+                    {level2Loading ? (
+                      <p className="text-[9px] text-slate-400">Preparing recommendations...</p>
+                    ) : level2Actions.length === 0 ? (
+                      <p className="text-[9px] text-slate-400">No immediate actions required.</p>
+                    ) : (
+                      level2Actions.map((action, idx) => (
+                        <div key={idx} className="flex gap-1.5 text-[8px] bg-white border border-slate-100 rounded p-1.5">
+                          <Zap className="w-2.5 h-2.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                          <span className="text-slate-700">{action}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Key Insights */}
             {narrative && (
