@@ -1,4 +1,4 @@
-"""Load vessel-level stock report CSV into the inventory_detail table.
+"""Load vessel-level stock report (CSV or Excel) into the inventory_detail table.
 
 The source file has a title row plus a header row. The important rule for this
 dataset is that `no_of_days_of_stock` is derived, not trusted from the file:
@@ -37,6 +37,7 @@ from backend.ingestion_feedback import (
 
 
 BASE_COLUMNS = [
+    "fd",
     "vessel_date",
     "vessel_name",
     "product_name",
@@ -55,11 +56,19 @@ OPTIONAL_COLUMN_ALIASES = {
         "cost_price_mt_inr",
         "cost_price_inr",
         "cost_price",
+        "purchase_price_mt_inr",
+        "purchase_price",
     },
     "average_selling_price_INR": {
         "average_selling_price_mt_inr",
         "average_selling_price_inr",
         "average_selling_price",
+        "avg_sale_price",
+        "avg_sale_price_inr",
+    },
+    "market_price_INR": {
+        "market_price",
+        "market_price_inr",
     },
 }
 
@@ -67,7 +76,9 @@ OPTIONAL_COLUMN_ALIASES = {
 def normalize_column_name(name: str) -> str:
     cleaned = str(name).strip().lower().replace("\n", " ")
     cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned)
-    return cleaned.strip("_")
+    cleaned = cleaned.strip("_")
+    cleaned = re.sub(r"_\d+$", "", cleaned)
+    return cleaned
 
 
 def normalize_product_name(name: str | None) -> str:
@@ -90,7 +101,12 @@ def build_commodity_name_map(session) -> dict[str, str]:
 def parse_report_date(title_line: str) -> date:
     match = re.search(r"STOCK REPORT\s+(\d{1,2}-\d{1,2}-\d{4})", title_line.upper())
     if not match:
+        match = re.search(r"STOCK REPORT\s+(\d{1,2}-\d{1,2}-\d{2})", title_line.upper())
+    if not match:
         raise ValueError(f"Could not parse report date from title: {title_line!r}")
+    parsed = match.group(1)
+    if len(parsed.split("-")[-1]) == 2:
+        return datetime.strptime(parsed, "%d-%m-%y").date()
     return datetime.strptime(match.group(1), "%d-%m-%Y").date()
 
 
@@ -120,23 +136,158 @@ def to_date(value) -> Optional[date]:
     return parsed.date()
 
 
-def read_stock_report(path: str) -> tuple[date, pd.DataFrame]:
+def to_text(value) -> Optional[str]:
+    if value is None or pd.isna(value):
+        return None
+    text_value = str(value).strip()
+    return text_value or None
+
+
+def _build_normalized_source_columns(source: pd.DataFrame) -> dict[str, list[str]]:
+    normalized: dict[str, list[str]] = {}
+    for col in source.columns:
+        key = normalize_column_name(col)
+        normalized.setdefault(key, []).append(col)
+    return normalized
+
+
+def _pick_best_source_column(source: pd.DataFrame, candidates: list[str]) -> str | None:
+    best_col: str | None = None
+    best_non_null = -1
+    for col in candidates:
+        if col not in source.columns:
+            continue
+        non_null_count = int(source[col].notna().sum())
+        if non_null_count > best_non_null:
+            best_non_null = non_null_count
+            best_col = col
+    return best_col
+
+
+def _find_excel_header_row(raw_sheet: pd.DataFrame) -> int:
+    for idx in range(min(len(raw_sheet), 25)):
+        row_values = [normalize_column_name(v) for v in raw_sheet.iloc[idx].tolist() if not pd.isna(v)]
+        row_set = set(row_values)
+        if {"vessel_date", "vessel_name", "product_name", "port"}.issubset(row_set):
+            return idx
+    raise ValueError("Could not find header row in stock report sheet")
+
+
+def _extract_report_date_from_sheet(raw_sheet: pd.DataFrame, header_row: int) -> date:
+    for idx in range(max(0, header_row - 5), header_row + 1):
+        row_text = " ".join([str(v) for v in raw_sheet.iloc[idx].tolist() if not pd.isna(v)])
+        if row_text.strip():
+            try:
+                return parse_report_date(row_text)
+            except ValueError:
+                continue
+    raise ValueError("Could not parse report date from Excel title rows")
+
+
+def _find_preferred_sheet(path: str) -> str:
+    xl = pd.ExcelFile(path)
+    chosen_sheet = xl.sheet_names[0]
+    best_score: tuple[int, int, int] = (-1, -1, -1)
+
+    core_aliases = {
+        "vessel_date", "vessel_name", "product_name", "port",
+        "unsold_qty", "sold_qty_pending_lifting", "physical_stock", "otr_qty",
+        "terminal", "company", "no_of_days_of_stock",
+        "purchase_price_mt_inr", "avg_sale_price",
+    }
+
+    for sheet_name in xl.sheet_names:
+        raw_sheet = pd.read_excel(path, sheet_name=sheet_name, header=None)
+        if raw_sheet.empty:
+            continue
+        try:
+            header_row = _find_excel_header_row(raw_sheet)
+            source = pd.read_excel(path, sheet_name=sheet_name, header=header_row)
+
+            normalized_map = _build_normalized_source_columns(source)
+            has_market_column = 1 if any(alias in normalized_map for alias in OPTIONAL_COLUMN_ALIASES["market_price_INR"]) else 0
+
+            core_columns_present = 0
+            for alias in core_aliases:
+                candidates = normalized_map.get(alias, [])
+                if not candidates:
+                    continue
+                selected = _pick_best_source_column(source, candidates)
+                if selected is not None and int(source[selected].notna().sum()) > 0:
+                    core_columns_present += 1
+
+            populated_rows = int(len(source.dropna(how="all")))
+            score = (has_market_column, core_columns_present, populated_rows)
+
+            if score > best_score:
+                best_score = score
+                chosen_sheet = sheet_name
+        except Exception:
+            continue
+    return chosen_sheet
+
+
+def _read_stock_report_excel(path: str) -> tuple[date, pd.DataFrame]:
+    sheet_name = _find_preferred_sheet(path)
+    raw_sheet = pd.read_excel(path, sheet_name=sheet_name, header=None)
+    header_row = _find_excel_header_row(raw_sheet)
+    report_date = _extract_report_date_from_sheet(raw_sheet, header_row)
+
+    source = pd.read_excel(path, sheet_name=sheet_name, header=header_row)
+    source = source.dropna(how="all")
+
+    normalized_source_columns = _build_normalized_source_columns(source)
+
+    field_aliases = {
+        "fd": {"fd"},
+        "vessel_date": {"vessel_date", "vessal_date"},
+        "vessel_name": {"vessel_name"},
+        "product_name": {"product_name"},
+        "port_name": {"port", "port_name"},
+        "unsold_qty": {"unsold_qty"},
+        "sold_qty_pending_lifting": {"sold_qty_pending_lifting", "sold_qty_pending_lifting_"},
+        "physical_stock": {"physical_stock"},
+        "otr_qty": {"otr_qty"},
+        "company_terminal_name": {"terminal", "company_terminal_name"},
+        "company_name": {"company", "company_name"},
+        "file_reported_days_of_stock": {"no_of_days_of_stock"},
+        "cost_price_INR": OPTIONAL_COLUMN_ALIASES["cost_price_INR"],
+        "average_selling_price_INR": OPTIONAL_COLUMN_ALIASES["average_selling_price_INR"],
+        "market_price_INR": OPTIONAL_COLUMN_ALIASES["market_price_INR"],
+    }
+
+    df = pd.DataFrame()
+    for field, aliases in field_aliases.items():
+        candidate_columns: list[str] = []
+        for alias in aliases:
+            candidate_columns.extend(normalized_source_columns.get(alias, []))
+        selected = _pick_best_source_column(source, candidate_columns)
+        df[field] = source[selected] if selected is not None else None
+
+    for column in ["vessel_name", "product_name", "port_name", "company_terminal_name", "company_name"]:
+        df[column] = df[column].astype(str).str.strip()
+
+    return report_date, df
+
+
+def _read_stock_report_csv(path: str) -> tuple[date, pd.DataFrame]:
     raw_lines = Path(path).read_text(encoding="utf-8-sig").splitlines()
     if not raw_lines:
         raise ValueError(f"Empty stock report: {path}")
 
     report_date = parse_report_date(raw_lines[0])
-
     source = pd.read_csv(path, header=1, encoding="utf-8-sig")
 
-    if source.shape[1] < len(BASE_COLUMNS):
+    if source.shape[1] < len(BASE_COLUMNS) - 1:
         raise ValueError(
-            f"Unexpected stock report format. Expected at least {len(BASE_COLUMNS)} columns, "
+            f"Unexpected stock report format. Expected at least {len(BASE_COLUMNS) - 1} columns, "
             f"found {source.shape[1]}"
         )
 
-    df = source.iloc[:, : len(BASE_COLUMNS)].copy()
-    df.columns = BASE_COLUMNS
+    csv_base_columns = [c for c in BASE_COLUMNS if c != "fd"]
+    df = source.iloc[:, : len(csv_base_columns)].copy()
+    df.columns = csv_base_columns
+    df["fd"] = None
 
     normalized_source_columns = {
         normalize_column_name(col): col
@@ -153,10 +304,17 @@ def read_stock_report(path: str) -> tuple[date, pd.DataFrame]:
         else:
             df[target_field] = None
 
-    for column in ["vessel_date", "product_name", "port_name", "company_terminal_name", "company_name"]:
+    for column in ["vessel_name", "product_name", "port_name", "company_terminal_name", "company_name"]:
         df[column] = df[column].astype(str).str.strip()
 
     return report_date, df
+
+
+def read_stock_report(path: str) -> tuple[date, pd.DataFrame]:
+    suffix = Path(path).suffix.lower()
+    if suffix in {".xlsx", ".xlsm", ".xls"}:
+        return _read_stock_report_excel(path)
+    return _read_stock_report_csv(path)
 
 
 def ensure_inventory_detail_columns(engine) -> None:
@@ -164,12 +322,16 @@ def ensure_inventory_detail_columns(engine) -> None:
     columns = {column["name"] for column in inspector.get_columns("inventory_detail")}
 
     ddl_statements = []
+    if "fd" not in columns:
+        ddl_statements.append("ALTER TABLE inventory_detail ADD COLUMN fd VARCHAR(50)")
     if "company_name" not in columns:
         ddl_statements.append("ALTER TABLE inventory_detail ADD COLUMN company_name VARCHAR(255)")
     if "cost_price_INR" not in columns:
         ddl_statements.append("ALTER TABLE inventory_detail ADD COLUMN cost_price_INR NUMERIC(15, 4)")
     if "average_selling_price_INR" not in columns:
         ddl_statements.append("ALTER TABLE inventory_detail ADD COLUMN average_selling_price_INR NUMERIC(15, 4)")
+    if "market_price_INR" not in columns:
+        ddl_statements.append("ALTER TABLE inventory_detail ADD COLUMN market_price_INR NUMERIC(10, 4)")
 
     if not ddl_statements:
         return
@@ -213,11 +375,14 @@ def upsert_stock_row(
     otr_qty = to_float(row["otr_qty"])
     cost_price_INR = to_float(row["cost_price_INR"])
     average_selling_price_INR = to_float(row["average_selling_price_INR"])
+    market_price_INR = to_float(row.get("market_price_INR"))
+    fd = to_text(row.get("fd"))
 
     # Extended uniqueness key: include ALL fields to detect exact duplicates
     key_query = select(InventoryDetail).where(
         # Identifiers & dates
         InventoryDetail.date == report_date,
+        InventoryDetail.fd == fd,
         InventoryDetail.vessel_name == (row["vessel_name"] or None),
         InventoryDetail.vessel_date == vessel_date,
         InventoryDetail.product_name == canonical_product_name,
@@ -232,6 +397,7 @@ def upsert_stock_row(
         # Pricing (all must match)
         InventoryDetail.cost_price_INR == cost_price_INR,
         InventoryDetail.average_selling_price_INR == average_selling_price_INR,
+        InventoryDetail.market_price_INR == market_price_INR,
         # Metrics
         InventoryDetail.no_of_days_of_stock == inventory_days,
     )
@@ -239,6 +405,7 @@ def upsert_stock_row(
 
     payload = {
         "date": report_date,
+        "fd": fd,
         "vessel_date": vessel_date,
         "vessel_name": row["vessel_name"] or None,
         "product_name": canonical_product_name or None,
@@ -251,6 +418,7 @@ def upsert_stock_row(
         "otr_qty": otr_qty,
         "cost_price_INR": cost_price_INR,
         "average_selling_price_INR": average_selling_price_INR,
+        "market_price_INR": market_price_INR,
         "no_of_days_of_stock": inventory_days,
     }
 
@@ -262,6 +430,7 @@ def upsert_stock_row(
     # update it in place instead of inserting a duplicate row.
     legacy_query = select(InventoryDetail).where(
         InventoryDetail.date == report_date,
+        InventoryDetail.fd == fd,
         InventoryDetail.vessel_name == (row["vessel_name"] or None),
         InventoryDetail.vessel_date == vessel_date,
         InventoryDetail.product_name == canonical_product_name,
@@ -276,12 +445,14 @@ def upsert_stock_row(
         or_(
             InventoryDetail.cost_price_INR.is_(None),
             InventoryDetail.average_selling_price_INR.is_(None),
+            InventoryDetail.market_price_INR.is_(None),
         ),
     )
     legacy_row = session.execute(legacy_query).scalar_one_or_none()
     if legacy_row:
         legacy_row.cost_price_INR = cost_price_INR
         legacy_row.average_selling_price_INR = average_selling_price_INR
+        legacy_row.market_price_INR = market_price_INR
         return "updated"
 
     # New record (different vessel/quantities/pricing or first time)
@@ -418,6 +589,6 @@ def load_stock_report(path: str) -> IngestionFeedback:
 
 
 if __name__ == "__main__":
-    default_path = Path("data_files/stock_report.csv")
+    default_path = Path("data_files/DAILY STOCK REPORT 27.05.26.xlsx")
     result = load_stock_report(str(default_path))
     print(result)

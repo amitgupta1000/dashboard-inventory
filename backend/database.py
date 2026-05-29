@@ -273,6 +273,7 @@ class InventoryDetail(Base):
 
     # Import & Vessel Information
     date = Column(Date, nullable=False, index=True)
+    fd = Column(String(50), nullable=True, index=True)
     vessel_date = Column(Date, nullable=True)
     vessel_name = Column(String(255), nullable=True, index=True)
 
@@ -293,7 +294,7 @@ class InventoryDetail(Base):
     cif_duty = Column(Numeric(15, 4), nullable=True)  # CIF + Duty cost
     cost_price_INR = Column(Numeric(15, 4), nullable=True)
     average_selling_price_INR = Column(Numeric(15, 4), nullable=True)
-    exchange_rate = Column(Numeric(10, 4), nullable=True)  # USD to INR exchange rate
+    market_price_INR = Column(Numeric(10, 4), nullable=True)
 
     # Incoming Stock
     incoming_stock = Column(Numeric(15, 3), nullable=True)  # Incoming stock (MT)
@@ -308,10 +309,10 @@ class InventoryDetail(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "date", "vessel_name", "vessel_date", "product_name", "port_name",
+            "date", "fd", "vessel_name", "vessel_date", "product_name", "port_name",
             "company_terminal_name", "company_name",
             "unsold_qty", "sold_qty_pending_lifting", "physical_stock", "otr_qty",
-            "cost_price_INR", "average_selling_price_INR", "no_of_days_of_stock",
+            "cost_price_INR", "average_selling_price_INR", "market_price_INR", "no_of_days_of_stock",
             name="uq_inventory_detail_complete_record"
         ),
     )

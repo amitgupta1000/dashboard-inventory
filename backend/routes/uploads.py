@@ -181,6 +181,16 @@ async def upload_inventory(file: UploadFile = File(...)):
         
         ingestion_result = _process_uploaded_file("inventory", gcs_path, file.filename)
 
+        if ingestion_result.status == "failed":
+            ingestion_payload = ingestion_result.model_dump() if hasattr(ingestion_result, "model_dump") else ingestion_result.dict()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Inventory upload stored in GCS but ingestion failed",
+                    "ingestion": ingestion_payload,
+                },
+            )
+
         return FileUploadResponse(
             success=True,
             gcs_path=gcs_path,
@@ -263,6 +273,16 @@ async def upload_prices(file: UploadFile = File(...)):
         
         ingestion_result = _process_uploaded_file("prices", gcs_path, file.filename)
 
+        if ingestion_result.status == "failed":
+            ingestion_payload = ingestion_result.model_dump() if hasattr(ingestion_result, "model_dump") else ingestion_result.dict()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Prices upload stored in GCS but ingestion failed",
+                    "ingestion": ingestion_payload,
+                },
+            )
+
         return FileUploadResponse(
             success=True,
             gcs_path=gcs_path,
@@ -344,6 +364,16 @@ async def upload_sales_register(file: UploadFile = File(...)):
         logger.info(f"Sales register file uploaded: {gcs_path}")
         
         ingestion_result = _process_uploaded_file("sales_register", gcs_path, file.filename)
+
+        if ingestion_result.status == "failed":
+            ingestion_payload = ingestion_result.model_dump() if hasattr(ingestion_result, "model_dump") else ingestion_result.dict()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "message": "Sales-register upload stored in GCS but ingestion failed",
+                    "ingestion": ingestion_payload,
+                },
+            )
 
         return FileUploadResponse(
             success=True,

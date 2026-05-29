@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS inventory_detail (
     id                              SERIAL PRIMARY KEY,
 
     date                            DATE NOT NULL,
+    fd                              VARCHAR(50),
     vessel_date                     DATE,
     vessel_name                     VARCHAR(255),
 
@@ -83,7 +84,7 @@ CREATE TABLE IF NOT EXISTS inventory_detail (
     cif_duty                        NUMERIC(15, 4),
     cost_price_INR                  NUMERIC(15, 4),
     average_selling_price_INR       NUMERIC(15, 4),
-    exchange_rate                   NUMERIC(10, 4),
+    market_price_INR                NUMERIC(10, 4),
 
     incoming_stock                  NUMERIC(15, 3),
     incoming_stock_date             DATE,
@@ -93,11 +94,17 @@ CREATE TABLE IF NOT EXISTS inventory_detail (
     created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT uq_inventory_detail_record
-        UNIQUE (date, vessel_name, product_name, company_terminal_name, company_name, port_name)
+    CONSTRAINT uq_inventory_detail_complete_record
+        UNIQUE (
+            date, fd, vessel_name, vessel_date, product_name, port_name,
+            company_terminal_name, company_name,
+            unsold_qty, sold_qty_pending_lifting, physical_stock, otr_qty,
+            cost_price_INR, average_selling_price_INR, market_price_INR, no_of_days_of_stock
+        )
 );
 
 CREATE INDEX IF NOT EXISTS idx_inventory_detail_date ON inventory_detail (date);
+CREATE INDEX IF NOT EXISTS idx_inventory_detail_fd ON inventory_detail (fd);
 CREATE INDEX IF NOT EXISTS idx_inventory_detail_product ON inventory_detail (product_name);
 CREATE INDEX IF NOT EXISTS idx_inventory_detail_port ON inventory_detail (port_name);
 CREATE INDEX IF NOT EXISTS idx_inventory_detail_company ON inventory_detail (company_name);
