@@ -26,6 +26,7 @@ function App() {
   const [analyticsAsOfDate, setAnalyticsAsOfDate] = useState('');
   const [analyticsBackdate, setAnalyticsBackdate] = useState('');
   const [analyticsAvailableDates, setAnalyticsAvailableDates] = useState<string[]>([]);
+  const [unsoldDaysThreshold, setUnsoldDaysThreshold] = useState<number>(25);
 
   // Layer 2: Selected product details and drilldown
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -198,12 +199,17 @@ function App() {
     }
   };
 
-  const fetchVesselDetails = async (asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+  const fetchVesselDetails = async (
+    asOfParam = analyticsAsOfDate,
+    backdateParam = analyticsBackdate,
+    unsoldDaysThresholdParam = unsoldDaysThreshold,
+  ) => {
     setLoadingVesselDetails(true);
     try {
       const params = new URLSearchParams();
       if (asOfParam) params.set('as_of', asOfParam);
       if (backdateParam) params.set('backdate', backdateParam);
+      params.set('unsold_days_threshold', String(unsoldDaysThresholdParam));
       
       const url = params.toString()
         ? apiUrl(`/api/analytics/vessel-detail?${params.toString()}`)
@@ -222,13 +228,19 @@ function App() {
     }
   };
 
-  const fetchSummaryView = async (viewType = summaryViewType, asOfParam = analyticsAsOfDate, backdateParam = analyticsBackdate) => {
+  const fetchSummaryView = async (
+    viewType = summaryViewType,
+    asOfParam = analyticsAsOfDate,
+    backdateParam = analyticsBackdate,
+    unsoldDaysThresholdParam = unsoldDaysThreshold,
+  ) => {
     setLoadingSummaryView(true);
     try {
       const params = new URLSearchParams();
       params.set('view_type', viewType);
       if (asOfParam) params.set('as_of', asOfParam);
       if (backdateParam) params.set('backdate', backdateParam);
+      params.set('unsold_days_threshold', String(unsoldDaysThresholdParam));
       
       const response = await fetch(apiUrl(`/api/analytics/summary?${params.toString()}`));
       const data = await response.json();
@@ -350,11 +362,11 @@ function App() {
     await fetchNarrative(analyticsAsOfDate, analyticsBackdate);
 
     if (inventoryModalOpen) {
-      await fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
+      await fetchVesselDetails(analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
     }
 
     if (summaryModalOpen || activeAnalyticsTab === 'summary') {
-      await fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
+      await fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
     }
 
     if (selectedProduct) {
@@ -381,21 +393,21 @@ function App() {
 
   useEffect(() => {
     if (activeAnalyticsTab === 'summary') {
-      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
+      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
     }
-  }, [summaryViewType, analyticsAsOfDate, analyticsBackdate]);
+  }, [summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold]);
 
   useEffect(() => {
     if (inventoryModalOpen) {
-      fetchVesselDetails(analyticsAsOfDate, analyticsBackdate);
+      fetchVesselDetails(analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
     }
-  }, [inventoryModalOpen]);
+  }, [inventoryModalOpen, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold]);
 
   useEffect(() => {
     if (summaryModalOpen) {
-      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate);
+      fetchSummaryView(summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold);
     }
-  }, [summaryModalOpen, summaryViewType, analyticsAsOfDate, analyticsBackdate]);
+  }, [summaryModalOpen, summaryViewType, analyticsAsOfDate, analyticsBackdate, unsoldDaysThreshold]);
 
   useEffect(() => {
     if (selectedProduct) {
@@ -572,6 +584,24 @@ function App() {
                   ))}
                 </select>
               </div>
+            </div>
+
+            <div className="shrink-0 flex items-center gap-2">
+              <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                Inventory Days Min Unsold Qty
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={unsoldDaysThreshold}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setUnsoldDaysThreshold(Number.isFinite(next) && next >= 0 ? next : 0);
+                }}
+                className="w-20 text-[10px] px-2 py-1 rounded-md border border-slate-300 bg-white font-semibold text-slate-700"
+              />
+              <span className="text-[8px] text-slate-500">(Inventory days shown only when Unsold Qty &gt; threshold)</span>
             </div>
 
             {/* Layer 1 Analytics: Tabbed Interface */}
@@ -767,6 +797,8 @@ function App() {
                             physical_stock: row.physical_stock,
                             stock_value: Number(row.physical_stock || 0) * Number(row.cost_price_inr || 0),
                             average_selling_price_inr: row.average_selling_price_inr,
+                            market_price_inr: row.effective_market_price_inr ?? row.market_price_inr,
+                            market_price_source: row.market_price_source,
                             cost_price_inr: row.cost_price_inr,
                             margin_per_mt_inr: Number(row.average_selling_price_inr || 0) - Number(row.cost_price_inr || 0),
                             vessel_count: 1,
@@ -831,6 +863,42 @@ function App() {
                           <div className="bg-white rounded p-1.5 border border-slate-100">
                             <p className="text-slate-500 font-semibold text-[9px]">Cost/MT</p>
                             <p className="font-bold text-slate-900 text-[10px]">₹{Number(row.cost_price_inr || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                          </div>
+                          <div className="bg-white rounded p-1.5 border border-slate-100">
+                            <p className="text-slate-500 font-semibold text-[9px]">Market Price/MT</p>
+                            <p className="font-bold text-slate-900 text-[10px]">₹{Number((row.effective_market_price_inr ?? row.market_price_inr) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}</p>
+                            {(() => {
+                              const explicitSource = String(row.market_price_source || '').trim();
+                              const rawMarketPrice = Number(row.market_price_inr || 0);
+                              const avgSalePrice = Number(row.average_selling_price_inr || 0);
+                              const inferredSource = explicitSource
+                                ? explicitSource
+                                : rawMarketPrice > 0
+                                  ? 'stock_report'
+                                  : 'avg_sale_price_fallback';
+
+                              const badgeClass =
+                                inferredSource === 'stock_report'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : inferredSource === 'market_table_fallback'
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                    : 'bg-slate-100 text-slate-600 border-slate-200';
+
+                              const badgeText =
+                                inferredSource === 'stock_report'
+                                  ? 'Stock Report'
+                                  : inferredSource === 'market_table_fallback'
+                                    ? 'Market Table'
+                                    : rawMarketPrice <= 0 && avgSalePrice > 0
+                                      ? 'Avg Sale'
+                                      : 'Fallback';
+
+                              return (
+                                <span className={`inline-block mt-1 px-1.5 py-0.5 rounded-full text-[8px] font-semibold border ${badgeClass}`}>
+                                  {badgeText}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <div className="bg-white rounded p-1.5 border border-slate-100">
                             <p className="text-slate-500 font-semibold text-[9px]">Sell Price/MT</p>

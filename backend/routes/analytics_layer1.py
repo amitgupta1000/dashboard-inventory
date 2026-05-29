@@ -43,6 +43,65 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
+def _normalize_key(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
+
+
+def _load_market_price_fallback_map(engine: sqlalchemy.Engine, as_of: date) -> dict[tuple[str, str], float]:
+    """
+    Load fallback market prices from market_data_hvb for the given as_of date.
+    If no snapshot exists for as_of, uses latest available report_date <= as_of,
+    else falls back to the latest overall snapshot.
+    """
+    try:
+        with engine.connect() as conn:
+            fallback_date_query = sqlalchemy.text("""
+                SELECT MAX(report_date)
+                FROM market_data_hvb
+                WHERE report_date <= :as_of
+            """)
+            fallback_date = conn.execute(fallback_date_query, {"as_of": as_of}).scalar()
+
+            if fallback_date is None:
+                latest_date_query = sqlalchemy.text("""
+                    SELECT MAX(report_date)
+                    FROM market_data_hvb
+                """)
+                fallback_date = conn.execute(latest_date_query).scalar()
+
+            if fallback_date is None:
+                return {}
+
+            rows_query = sqlalchemy.text("""
+                SELECT
+                    product_name,
+                    port,
+                    market_price
+                FROM market_data_hvb
+                WHERE report_date = :report_date
+                  AND market_price IS NOT NULL
+            """)
+            rows = conn.execute(rows_query, {"report_date": fallback_date}).fetchall()
+    except Exception:
+        # If market table is unavailable, silently keep fallback map empty.
+        return {}
+
+    buckets: dict[tuple[str, str], list[float]] = {}
+    for product_name, port, market_price in rows:
+        price = _to_float(market_price)
+        if price <= 0:
+            continue
+        key = (_normalize_key(product_name), _normalize_key(port))
+        buckets.setdefault(key, []).append(price)
+
+    result: dict[tuple[str, str], float] = {}
+    for key, values in buckets.items():
+        if values:
+            result[key] = sum(values) / len(values)
+
+    return result
+
+
 def _get_stock_dates(engine: sqlalchemy.Engine) -> list[str]:
     """Get all distinct dates with stock data, sorted newest first."""
     query = sqlalchemy.text("""
@@ -136,7 +195,7 @@ def _load_vessel_details(engine: sqlalchemy.Engine, target_date: date | None) ->
     ]
 
 
-def _aggregate_by_product(details: list[dict]) -> list[dict]:
+def _aggregate_by_product(details: list[dict], unsold_days_threshold: float) -> list[dict]:
     """Aggregate vessel-level details by product."""
     grouped: dict[str, dict] = {}
     
@@ -173,7 +232,7 @@ def _aggregate_by_product(details: list[dict]) -> list[dict]:
         agg["weighted_selling_sum"] += physical * selling
         agg["price_weight"] += physical
         
-        if row["inventory_days"] is not None:
+        if row["inventory_days"] is not None and _to_float(row.get("unsold_qty")) > unsold_days_threshold:
             agg["inventory_days_sum"] += _to_float(row["inventory_days"])
             agg["inventory_days_count"] += 1
         
@@ -209,7 +268,7 @@ def _aggregate_by_product(details: list[dict]) -> list[dict]:
     return sorted(result, key=lambda x: x["stock_value"], reverse=True)
 
 
-def _aggregate_by_company(details: list[dict]) -> list[dict]:
+def _aggregate_by_company(details: list[dict], unsold_days_threshold: float) -> list[dict]:
     """Aggregate vessel-level details by company."""
     grouped: dict[str, dict] = {}
     
@@ -246,7 +305,7 @@ def _aggregate_by_company(details: list[dict]) -> list[dict]:
         agg["weighted_selling_sum"] += physical * selling
         agg["price_weight"] += physical
         
-        if row["inventory_days"] is not None:
+        if row["inventory_days"] is not None and _to_float(row.get("unsold_qty")) > unsold_days_threshold:
             agg["inventory_days_sum"] += _to_float(row["inventory_days"])
             agg["inventory_days_count"] += 1
 
@@ -285,7 +344,7 @@ def _aggregate_by_company(details: list[dict]) -> list[dict]:
     return sorted(result, key=lambda x: x["stock_value"], reverse=True)
 
 
-def _aggregate_by_port(details: list[dict]) -> list[dict]:
+def _aggregate_by_port(details: list[dict], unsold_days_threshold: float) -> list[dict]:
     """Aggregate vessel-level details by port."""
     grouped: dict[str, dict] = {}
     
@@ -322,7 +381,7 @@ def _aggregate_by_port(details: list[dict]) -> list[dict]:
         agg["weighted_selling_sum"] += physical * selling
         agg["price_weight"] += physical
         
-        if row["inventory_days"] is not None:
+        if row["inventory_days"] is not None and _to_float(row.get("unsold_qty")) > unsold_days_threshold:
             agg["inventory_days_sum"] += _to_float(row["inventory_days"])
             agg["inventory_days_count"] += 1
 
@@ -380,6 +439,7 @@ async def get_available_dates():
 async def get_vessel_inventory_detail(
     as_of: str | None = Query(None, description="Date in YYYY-MM-DD format"),
     backdate: str | None = Query(None, description="Compare to date in YYYY-MM-DD format"),
+    unsold_days_threshold: float = Query(25.0, ge=0, description="Only calculate/show inventory days where unsold_qty > threshold"),
 ):
     """
     Get vessel-level inventory details.
@@ -387,6 +447,7 @@ async def get_vessel_inventory_detail(
     """
     engine = get_db_engine()
     as_of_date, backdate_date, available_dates = _resolve_dates(engine, as_of, backdate)
+    market_fallback_map = _load_market_price_fallback_map(engine, as_of_date)
     
     current_details = _load_vessel_details(engine, as_of_date)
     previous_details = _load_vessel_details(engine, backdate_date)
@@ -404,6 +465,26 @@ async def get_vessel_inventory_detail(
         prev = previous_by_key.get(key)
         
         enhanced = row.copy()
+
+        stock_report_market_price = _to_float(row.get("market_price_inr"))
+        fallback_key = (_normalize_key(row.get("product_name")), _normalize_key(row.get("port_name")))
+        fallback_market_price = _to_float(market_fallback_map.get(fallback_key))
+        avg_sale_price = _to_float(row.get("average_selling_price_inr"))
+
+        if stock_report_market_price > 0:
+            effective_market_price = stock_report_market_price
+            market_price_source = "stock_report"
+        elif fallback_market_price > 0:
+            effective_market_price = fallback_market_price
+            market_price_source = "market_table_fallback"
+        else:
+            effective_market_price = avg_sale_price
+            market_price_source = "avg_sale_price_fallback"
+
+        enhanced["effective_market_price_inr"] = round(effective_market_price, 6)
+        enhanced["market_price_source"] = market_price_source
+        enhanced["inventory_days"] = row["inventory_days"] if _to_float(row.get("unsold_qty")) > unsold_days_threshold else None
+
         if prev:
             enhanced["delta_physical_stock"] = round(row["physical_stock"] - prev["physical_stock"], 2)
             enhanced["delta_unsold_qty"] = round(row["unsold_qty"] - prev["unsold_qty"], 2)
@@ -418,6 +499,7 @@ async def get_vessel_inventory_detail(
         "as_of_date": str(as_of_date),
         "backdate": str(backdate_date) if backdate_date else None,
         "available_dates": available_dates,
+        "unsold_days_threshold": unsold_days_threshold,
         "data": result,
     }
 
@@ -427,6 +509,7 @@ async def get_summary_view(
     view_type: Literal["product", "company", "port"] = Query("product", description="Aggregation level"),
     as_of: str | None = Query(None, description="Date in YYYY-MM-DD format"),
     backdate: str | None = Query(None, description="Compare to date in YYYY-MM-DD format"),
+    unsold_days_threshold: float = Query(25.0, ge=0, description="Only calculate inventory days where unsold_qty > threshold"),
 ):
     """
     Get aggregated inventory summary.
@@ -445,11 +528,11 @@ async def get_summary_view(
     
     # Aggregate based on view_type
     if view_type == "product":
-        current_aggregated = _aggregate_by_product(current_details)
+        current_aggregated = _aggregate_by_product(current_details, unsold_days_threshold)
     elif view_type == "company":
-        current_aggregated = _aggregate_by_company(current_details)
+        current_aggregated = _aggregate_by_company(current_details, unsold_days_threshold)
     elif view_type == "port":
-        current_aggregated = _aggregate_by_port(current_details)
+        current_aggregated = _aggregate_by_port(current_details, unsold_days_threshold)
     else:
         raise HTTPException(status_code=400, detail="Invalid view_type")
     
@@ -459,11 +542,11 @@ async def get_summary_view(
         previous_details = _load_vessel_details(engine, backdate_date)
         
         if view_type == "product":
-            previous_aggregated = _aggregate_by_product(previous_details)
+            previous_aggregated = _aggregate_by_product(previous_details, unsold_days_threshold)
         elif view_type == "company":
-            previous_aggregated = _aggregate_by_company(previous_details)
+            previous_aggregated = _aggregate_by_company(previous_details, unsold_days_threshold)
         else:  # port
-            previous_aggregated = _aggregate_by_port(previous_details)
+            previous_aggregated = _aggregate_by_port(previous_details, unsold_days_threshold)
         
         # Create lookup dict
         prev_by_key: dict[str, dict] = {}
@@ -489,5 +572,6 @@ async def get_summary_view(
         "as_of_date": str(as_of_date),
         "backdate": str(backdate_date) if backdate_date else None,
         "available_dates": available_dates,
+        "unsold_days_threshold": unsold_days_threshold,
         "data": result,
     }
